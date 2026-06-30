@@ -2,6 +2,10 @@ const {
     SlashCommandBuilder,
     PermissionFlagsBits,
     MessageFlags,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    StringSelectMenuBuilder,
 } = require("discord.js");
 
 const STAFF_ROLE_ID = "857990235194261514";
@@ -22,6 +26,7 @@ ROLE_CATEGORIES.forEach(cat => {
         maxRoleId: cat.maxId,
         requiredRoleIds: cat.requiredRoles,
         title: cat.label,
+        checkUnused: cat.checkUnused || false,
         unauthorizedReason: "Revoked unauthorized gradient role"
     };
 });
@@ -166,6 +171,89 @@ async function handleAssign(interaction) {
         });
     }
 }
+// Groups unauthorized users by role: { role -> [member, ...] }
+function groupByRole(usersToProcess) {
+    const byRole = new Map();
+    usersToProcess.forEach(({ member, roles }) => {
+        roles.forEach((role) => {
+            if (!byRole.has(role.id)) byRole.set(role.id, { role, members: [] });
+            byRole.get(role.id).members.push(member);
+        });
+    });
+    return byRole;
+}
+
+function formatListByRole(usersToProcess, unusedRoles, categoryLabel) {
+    const totalUsers = usersToProcess.size;
+    let text = `Found **${totalUsers}** user(s). Option: \`${categoryLabel}\`\n`;
+    const byRole = groupByRole(usersToProcess);
+    byRole.forEach(({ role, members }) => {
+        text += `- <@&${role.id}>\n`;
+        members.forEach((m) => {
+            text += `  - <@${m.id}>\n`;
+        });
+    });
+    if (unusedRoles && unusedRoles.size > 0) {
+        text += `\n**Unused Roles** (no members assigned)\n`;
+        unusedRoles.forEach((role) => {
+            text += `- <@&${role.id}>\n`;
+        });
+    }
+    return text;
+}
+
+// NOTE: Assumes guild.roles.fetch() has already been called before invoking this.
+function scanCategory(guild, config) {
+    const minRole = guild.roles.cache.get(config.minRoleId);
+    const maxRole = guild.roles.cache.get(config.maxRoleId);
+
+    if (!minRole || !maxRole) return null;
+
+    const lowerBound = Math.min(minRole.position, maxRole.position);
+    const upperBound = Math.max(minRole.position, maxRole.position);
+
+    const targetRoles = guild.roles.cache.filter(
+        (role) => role.position > lowerBound && role.position < upperBound
+    );
+
+    if (targetRoles.size === 0) return null;
+
+    // Track which roles have at least one non-bot member
+    const rolesWithMembers = new Set();
+    const usersToProcess = new Map();
+
+    guild.members.cache.forEach((member) => {
+        if (member.user.bot) return; // skip bots
+
+        const isAuthorized = config.requiredRoleIds.some((roleId) =>
+            member.roles.cache.has(roleId)
+        );
+
+        member.roles.cache.forEach((role) => {
+            if (targetRoles.has(role.id)) rolesWithMembers.add(role.id);
+        });
+
+        if (!isAuthorized) {
+            const rolesToRemove = member.roles.cache.filter((role) =>
+                targetRoles.has(role.id)
+            );
+            if (rolesToRemove.size > 0) {
+                usersToProcess.set(member.id, {
+                    member,
+                    roles: Array.from(rolesToRemove.values()),
+                });
+            }
+        }
+    });
+
+    // Only track unused roles for categories that opt in
+    const unusedRoles = config.checkUnused
+        ? targetRoles.filter((role) => !rolesWithMembers.has(role.id))
+        : targetRoles.filter(() => false); // empty
+
+    return { usersToProcess, unusedRoles };
+}
+
 async function handleRevoke(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
         return interaction.reply({
@@ -175,134 +263,212 @@ async function handleRevoke(interaction) {
         });
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     try {
         const categoryKey = interaction.options.getString("category");
-        const action = interaction.options.getString("action") || "list"; // Default to list
+        const action = interaction.options.getString("action") || "list";
+        const isVisible = interaction.options.getBoolean("visible") ?? false;
         const shouldExecute = action === "execute";
 
-        const config = REVOKE_CONFIGS[categoryKey];
-        if (!config) {
-            return interaction.editReply({
-                content: "Invalid category configuration.",
-            });
-        }
+        await interaction.deferReply(isVisible ? {} : { flags: MessageFlags.Ephemeral });
 
-        await interaction.guild.members.fetch();
+        // Fetch roles + members in parallel; give members up to 60s
+        await Promise.all([
+            interaction.guild.roles.fetch(),
+            interaction.guild.members.fetch({ time: 60_000 }),
+        ]);
 
-        const minRole = await interaction.guild.roles.fetch(config.minRoleId);
-        const maxRole = await interaction.guild.roles.fetch(config.maxRoleId);
+        // --- ALL CATEGORIES ---
+        if (categoryKey === "all") {
+            if (!shouldExecute) {
+                // LIST mode
+                let response = "";
+                let anyFound = false;
+                const foundCategoryIds = [];
 
-        if (!minRole || !maxRole) {
-            return interaction.editReply({
-                content: "One of the boundary roles could not be found.",
-            });
-        }
+                for (const cat of ROLE_CATEGORIES) {
+                    const config = REVOKE_CONFIGS[cat.id];
+                    if (!config) continue;
 
-        const lowerBound = Math.min(minRole.position, maxRole.position);
-        const upperBound = Math.max(minRole.position, maxRole.position);
+                    const result = scanCategory(interaction.guild, config);
 
-        const targetRoles = interaction.guild.roles.cache.filter(
-            (role) => role.position > lowerBound && role.position < upperBound
-        );
+                    if (!result) {
+                        response += `## ${config.title}\n✅ No roles found in boundaries.\n`;
+                        continue;
+                    }
 
-        if (targetRoles.size === 0) {
-            return interaction.editReply({
-                content:
-                    "No roles were found between the specified boundaries.",
-            });
-        }
+                    const { usersToProcess, unusedRoles } = result;
+                    const hasViolations = usersToProcess.size > 0;
+                    const hasUnused = unusedRoles.size > 0;
 
-        const usersToProcess = new Map();
-        interaction.guild.members.cache.forEach((member) => {
-            const isAuthorized = config.requiredRoleIds.some((roleId) =>
-                member.roles.cache.has(roleId)
-            );
+                    if (!hasViolations && !hasUnused) {
+                        response += `## ${config.title}\n✅ No unauthorized users or unused roles.\n`;
+                        continue;
+                    }
 
-            if (!isAuthorized) {
-                const rolesToRemove = member.roles.cache.filter((role) =>
-                    targetRoles.has(role.id)
-                );
-                if (rolesToRemove.size > 0) {
-                    usersToProcess.set(member.id, {
-                        member,
-                        roles: Array.from(rolesToRemove.values()),
-                    });
+                    if (hasViolations) {
+                        anyFound = true;
+                        foundCategoryIds.push(cat.id);
+                    }
+
+                    response += `## ${config.title}\n`;
+                    response += formatListByRole(usersToProcess, unusedRoles, config.title);
+                }
+
+                const replyPayload = {
+                    content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                    components: [],
+                };
+
+                if (anyFound) {
+                    // Multi-select menu: one option per category that has violations
+                    const selectMenu = new StringSelectMenuBuilder()
+                        .setCustomId("revoke_select_categories")
+                        .setPlaceholder("Select categories to revoke...")
+                        .setMinValues(1)
+                        .setMaxValues(foundCategoryIds.length)
+                        .addOptions(
+                            foundCategoryIds.map(id => ({
+                                label: REVOKE_CONFIGS[id].title,
+                                value: id,
+                            }))
+                        );
+
+                    replyPayload.components = [
+                        new ActionRowBuilder().addComponents(selectMenu),
+                    ];
+                }
+
+                return await interaction.editReply(replyPayload);
+            }
+
+            // EXECUTE mode
+            let response = "";
+            let totalUsers = 0;
+            let totalRemoved = 0;
+            let totalFailed = 0;
+
+            for (const cat of ROLE_CATEGORIES) {
+                const config = REVOKE_CONFIGS[cat.id];
+                if (!config) continue;
+
+                const result = scanCategory(interaction.guild, config);
+
+                if (!result) {
+                    response += `## ${config.title}\n✅ No roles found in boundaries.\n`;
+                    continue;
+                }
+
+                const { usersToProcess } = result;
+
+                if (usersToProcess.size === 0) {
+                    response += `## ${config.title}\n✅ No unauthorized users.\n`;
+                    continue;
+                }
+
+                response += `## ${config.title}\n`;
+                totalUsers += usersToProcess.size;
+
+                for (const [userId, { member, roles }] of usersToProcess.entries()) {
+                    response += `<@${userId}>:\n`;
+                    for (const role of roles) {
+                        try {
+                            await member.roles.remove(role, config.unauthorizedReason);
+                            response += `- ✅ Removed <@&${role.id}>\n`;
+                            totalRemoved++;
+                            await sendLogMessage(interaction, "revoked", role.name, member.user);
+                        } catch (error) {
+                            console.error(`Failed to remove role ${role.name} from ${member.user.tag}:`, error);
+                            response += `- ⚠️ Failed <@&${role.id}>: ${error.message}\n`;
+                            totalFailed++;
+                        }
+                    }
                 }
             }
-        });
 
+            response += `\n**Summary** — Users: ${totalUsers} | Removed: ${totalRemoved} | Failed: ${totalFailed}`;
+
+            return await interaction.editReply({
+                content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                components: [],
+            });
+        }
+
+        // --- SINGLE CATEGORY ---
+        const config = REVOKE_CONFIGS[categoryKey];
+        if (!config) {
+            return interaction.editReply({ content: "Invalid category configuration." });
+        }
+
+        const result = scanCategory(interaction.guild, config);
+
+        if (!result) {
+            return interaction.editReply({
+                content: "One of the boundary roles could not be found, or no roles exist between the boundaries.",
+            });
+        }
+
+        const { usersToProcess, unusedRoles } = result;
         let response = "";
 
         if (!shouldExecute) {
-            response = `# Unauthorized ${config.title} (List)\n\n`;
-            if (usersToProcess.size === 0) {
-                response += `✅ No unauthorized users found. No action needed.`;
-            } else {
-                response += `Found **${usersToProcess.size}** user(s) who are not authorized:\n\n`;
-                usersToProcess.forEach(({ member, roles }) => {
-                    response += `### <@${member.id}>\n`;
-                    roles.forEach((role) => {
-                        response += `- <@&${role.id}>\n`;
-                    });
-                    response += "\n";
+            // LIST mode
+            if (usersToProcess.size === 0 && unusedRoles.size === 0) {
+                return await interaction.editReply({
+                    content: `✅ No unauthorized users or unused roles found in **${config.title}**.`,
+                    components: [],
                 });
-                response +=
-                    "Run with `action: Execute Revoke` to remove these roles.";
             }
-        } else {
-            response = `# Unauthorized ${config.title} (Execute)\n\n`;
-            if (usersToProcess.size === 0) {
-                response += `✅ No unauthorized users found. No changes made.`;
-            } else {
-                let rolesRemovedCount = 0;
-                let failedRemovalsCount = 0;
 
-                for (const [
-                    userId,
-                    { member, roles },
-                ] of usersToProcess.entries()) {
-                    response += `### <@${userId}>\n`;
-                    for (const role of roles) {
-                        try {
-                            await member.roles.remove(
-                                role,
-                                config.unauthorizedReason
-                            );
-                            response += `- ✅ Removed <@&${role.id}>\n`;
-                            rolesRemovedCount++;
+            const listText = formatListByRole(usersToProcess, unusedRoles, config.title);
+            const showButton = usersToProcess.size > 0;
 
-                            await sendLogMessage(
-                                interaction,
-                                "revoked",
-                                role.name,
-                                member.user
-                            );
-                        } catch (error) {
-                            console.error(
-                                `Failed to remove role ${role.name} from ${member.user.tag}:`,
-                                error
-                            );
-                            response += `- ⚠️ Failed to remove <@&${role.id}>: ${error.message}\n`;
-                            failedRemovalsCount++;
-                        }
-                    }
-                    response += "\n";
+            return await interaction.editReply({
+                content: listText.length > 2000 ? listText.substring(0, 1997) + "..." : listText,
+                components: showButton ? [
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`revoke_execute_${categoryKey}`)
+                            .setLabel("Revoke Roles")
+                            .setStyle(ButtonStyle.Danger)
+                    ),
+                ] : [],
+            });
+        }
+
+        // EXECUTE mode
+        if (usersToProcess.size === 0) {
+            return await interaction.editReply({
+                content: `✅ No unauthorized users found in **${config.title}**.`,
+                components: [],
+            });
+        }
+
+        let rolesRemovedCount = 0;
+        let failedRemovalsCount = 0;
+
+        for (const [userId, { member, roles }] of usersToProcess.entries()) {
+            response += `### <@${userId}>\n`;
+            for (const role of roles) {
+                try {
+                    await member.roles.remove(role, config.unauthorizedReason);
+                    response += `- ✅ Removed <@&${role.id}>\n`;
+                    rolesRemovedCount++;
+                    await sendLogMessage(interaction, "revoked", role.name, member.user);
+                } catch (error) {
+                    console.error(`Failed to remove role ${role.name} from ${member.user.tag}:`, error);
+                    response += `- ⚠️ Failed to remove <@&${role.id}>: ${error.message}\n`;
+                    failedRemovalsCount++;
                 }
-                response += `\n## Summary\n- Users processed: ${usersToProcess.size}\n- Roles removed: ${rolesRemovedCount}\n- Failed removals: ${failedRemovalsCount}`;
             }
+            response += "\n";
         }
+        response += `\n**Summary** — Users: ${usersToProcess.size} | Removed: ${rolesRemovedCount} | Failed: ${failedRemovalsCount}`;
 
-        if (response.length > 2000) {
-            await interaction.editReply({
-                content: response.substring(0, 1997) + "...",
-            });
-        } else {
-            await interaction.editReply({
-                content: response,
-            });
-        }
+        await interaction.editReply({
+            content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+            components: [],
+        });
+
     } catch (error) {
         console.error("Error in revoke logic:", error);
         await interaction.editReply({
@@ -373,6 +539,7 @@ module.exports = {
                         .setDescription("The category of roles to check")
                         .setRequired(true)
                         .addChoices(
+                            { name: "All Categories", value: "all" },
                             ...ROLE_CATEGORIES.map(cat => ({
                                 name: cat.label,
                                 value: cat.id
@@ -388,6 +555,12 @@ module.exports = {
                             { name: "List Unauthorized Users", value: "list" },
                             { name: "Execute Revoke", value: "execute" }
                         )
+                )
+                .addBooleanOption((option) =>
+                    option
+                        .setName("visible")
+                        .setDescription("Post the result publicly in the channel (default: hidden/ephemeral)")
+                        .setRequired(false)
                 )
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),

@@ -25,7 +25,7 @@ module.exports = {
             await guild.roles.fetch();
 
             // 2. Build the menus
-            for (const cat of ROLE_CATEGORIES) {
+            for (const cat of ROLE_CATEGORIES.filter(cat => cat.showInPicker !== false)) {
                 const minRole = guild.roles.cache.get(cat.minId);
                 const maxRole = guild.roles.cache.get(cat.maxId);
 

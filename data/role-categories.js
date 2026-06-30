@@ -50,6 +50,15 @@ module.exports = [
             "857990235194261514",
             "913864890916147270",
         ],
-        emojis: {}
+        emojis: {},
+    },
+    {
+        id: "custom_roles",
+        label: "Custom Roles",
+        showInPicker: false,
+        checkUnused: true,
+        minId: "1424016949288898731",
+        maxId: "1424000379712045237",
+        requiredRoles: ["855954434935619584"],
     },
 ];

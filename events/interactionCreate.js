@@ -14,6 +14,47 @@ const STAFF_ROLE_IDS = ["913864890916147270", "857990235194261514"];
 
 const ROLE_CATEGORIES = require("../data/role-categories.js");
 
+// Build REVOKE_CONFIGS the same way role.js does, for button handler use
+const REVOKE_CONFIGS = {};
+ROLE_CATEGORIES.forEach(cat => {
+    REVOKE_CONFIGS[cat.id] = {
+        minRoleId: cat.minId,
+        maxRoleId: cat.maxId,
+        requiredRoleIds: cat.requiredRoles,
+        title: cat.label,
+        unauthorizedReason: "Revoked unauthorized gradient role",
+    };
+});
+
+// NOTE: Assumes guild.roles.fetch() + guild.members.fetch() have already been called.
+function scanCategoryForRevoke(guild, config) {
+    const minRole = guild.roles.cache.get(config.minRoleId);
+    const maxRole = guild.roles.cache.get(config.maxRoleId);
+
+    if (!minRole || !maxRole) return null;
+
+    const lowerBound = Math.min(minRole.position, maxRole.position);
+    const upperBound = Math.max(minRole.position, maxRole.position);
+
+    const targetRoles = guild.roles.cache.filter(
+        (role) => role.position > lowerBound && role.position < upperBound
+    );
+    if (targetRoles.size === 0) return null;
+
+    const usersToProcess = new Map();
+    guild.members.cache.forEach((member) => {
+        if (member.user.bot) return;
+        const isAuthorized = config.requiredRoleIds.some(id => member.roles.cache.has(id));
+        if (!isAuthorized) {
+            const rolesToRemove = member.roles.cache.filter(r => targetRoles.has(r.id));
+            if (rolesToRemove.size > 0) {
+                usersToProcess.set(member.id, { member, roles: Array.from(rolesToRemove.values()) });
+            }
+        }
+    });
+    return usersToProcess;
+}
+
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
@@ -206,7 +247,84 @@ module.exports = {
                     return;
                 }
 
-                // --- D. Stream Role Toggle ---
+                // --- D. Revoke Execute Button ---
+                if (customId.startsWith("revoke_execute_")) {
+                    if (!interaction.member.permissions.has(0x10000000n)) { // ManageRoles
+                        return interaction.reply({
+                            content: 'You need the "Manage Roles" permission to use this.',
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
+                    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                    await Promise.all([
+                        interaction.guild.roles.fetch(),
+                        interaction.guild.members.fetch({ time: 60_000 }),
+                    ]);
+
+                    const categoryKey = customId.replace("revoke_execute_", "");
+                    const categoriesToProcess = categoryKey === "all"
+                        ? ROLE_CATEGORIES
+                        : ROLE_CATEGORIES.filter(c => c.id === categoryKey);
+
+                    if (categoriesToProcess.length === 0) {
+                        return interaction.editReply({ content: "Unknown category." });
+                    }
+
+                    let response = categoryKey === "all"
+                        ? `# Unauthorized Roles — All Categories (Execute)\n\n`
+                        : `# Unauthorized ${REVOKE_CONFIGS[categoryKey]?.title} (Execute)\n\n`;
+
+                    let totalRemoved = 0;
+                    let totalFailed = 0;
+                    let totalUsers = 0;
+
+                    for (const cat of categoriesToProcess) {
+                        const config = REVOKE_CONFIGS[cat.id];
+                        if (!config) continue;
+
+                        const usersToProcess = await scanCategoryForRevoke(interaction.guild, config);
+
+                        if (!usersToProcess || usersToProcess.size === 0) {
+                            if (categoryKey === "all") response += `## ${config.title}\n✅ No unauthorized users.\n\n`;
+                            continue;
+                        }
+
+                        if (categoryKey === "all") response += `## ${config.title}\n`;
+                        totalUsers += usersToProcess.size;
+
+                        for (const [userId, { member, roles }] of usersToProcess.entries()) {
+                            response += `<@${userId}>:\n`;
+                            for (const role of roles) {
+                                try {
+                                    await member.roles.remove(role, config.unauthorizedReason);
+                                    response += `- ✅ Removed <@&${role.id}>\n`;
+                                    totalRemoved++;
+                                } catch (err) {
+                                    response += `- ⚠️ Failed <@&${role.id}>: ${err.message}\n`;
+                                    totalFailed++;
+                                }
+                            }
+                        }
+                        response += "\n";
+                    }
+
+                    response += `## Summary\n- Users processed: ${totalUsers}\n- Roles removed: ${totalRemoved}\n- Failed: ${totalFailed}`;
+
+                    // Disable the button on the original list message
+                    try {
+                        const disabledRow = ActionRowBuilder.from(interaction.message.components[0]);
+                        disabledRow.components[0].setDisabled(true).setLabel("Revoke Executed").setStyle(ButtonStyle.Secondary);
+                        await interaction.message.edit({ components: [disabledRow] });
+                    } catch (_) {}
+
+                    return interaction.editReply({
+                        content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                    });
+                }
+
+                // --- E. Stream Role Toggle ---
+
                 if (customId === "toggle_stream_role") {
                     const roleId = "1498877432780820610";
                     const member = interaction.member;
@@ -234,7 +352,75 @@ module.exports = {
                 const customId = interaction.customId;
                 const selectedValue = interaction.values[0];
 
+                if (customId === "revoke_select_categories") {
+                    if (!interaction.member.permissions.has(0x10000000n)) {
+                        return interaction.reply({
+                            content: 'You need the "Manage Roles" permission.',
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
+                    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                    await Promise.all([
+                        interaction.guild.roles.fetch(),
+                        interaction.guild.members.fetch({ time: 60_000 }),
+                    ]);
+
+                    const selectedCategoryIds = interaction.values;
+                    let response = "";
+                    let totalRemoved = 0;
+                    let totalFailed = 0;
+                    let totalUsers = 0;
+
+                    for (const catId of selectedCategoryIds) {
+                        const config = REVOKE_CONFIGS[catId];
+                        if (!config) continue;
+
+                        const usersToProcess = await scanCategoryForRevoke(interaction.guild, config);
+
+                        if (!usersToProcess || usersToProcess.size === 0) {
+                            response += `## ${config.title}\n✅ No unauthorized users.\n`;
+                            continue;
+                        }
+
+                        response += `## ${config.title}\n`;
+                        totalUsers += usersToProcess.size;
+
+                        for (const [userId, { member, roles }] of usersToProcess.entries()) {
+                            response += `<@${userId}>:\n`;
+                            for (const role of roles) {
+                                try {
+                                    await member.roles.remove(role, config.unauthorizedReason);
+                                    response += `- ✅ Removed <@&${role.id}>\n`;
+                                    totalRemoved++;
+                                } catch (err) {
+                                    response += `- ⚠️ Failed <@&${role.id}>: ${err.message}\n`;
+                                    totalFailed++;
+                                }
+                            }
+                        }
+                    }
+
+                    response += `\n**Summary** — Users: ${totalUsers} | Removed: ${totalRemoved} | Failed: ${totalFailed}`;
+
+                    // Disable the select menu on the original message
+                    try {
+                        const disabledMenu = StringSelectMenuBuilder
+                            .from(interaction.message.components[0].components[0])
+                            .setDisabled(true)
+                            .setPlaceholder("Revoke executed");
+                        await interaction.message.edit({
+                            components: [new ActionRowBuilder().addComponents(disabledMenu)],
+                        });
+                    } catch (_) {}
+
+                    return interaction.editReply({
+                        content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                    });
+                }
+
                 if (customId.startsWith("select_")) {
+
                     await handleGradientSelection(
                         interaction,
                         customId,

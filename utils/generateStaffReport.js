@@ -79,10 +79,10 @@ module.exports = async function generateStaffReport(client, guildId, lookbackDay
 
         if (isActive) {
             reportData.active[username] = stats;
-            activeMentions.push(member.toString());
+            activeMentions.push(username);
         } else {
             reportData.inactive[username] = stats;
-            inactiveMentions.push(member.toString());
+            inactiveMentions.push(username);
         }
     });
 

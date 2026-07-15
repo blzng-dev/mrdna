@@ -301,7 +301,7 @@ async function handleRevoke(interaction) {
                     const hasUnused = unusedRoles.size > 0;
 
                     if (!hasViolations && !hasUnused) {
-                        response += `## ${config.title}\n✅ No unauthorized users or unused roles.\n`;
+                        response += `## ${config.title}\n✅ No unauthorized users.\n`;
                         continue;
                     }
 
@@ -414,7 +414,7 @@ async function handleRevoke(interaction) {
             // LIST mode
             if (usersToProcess.size === 0 && unusedRoles.size === 0) {
                 return await interaction.editReply({
-                    content: `✅ No unauthorized users or unused roles found in **${config.title}**.`,
+                    content: `✅ No unauthorized users found in **${config.title}**.`,
                     components: [],
                 });
             }

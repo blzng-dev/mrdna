@@ -10,7 +10,6 @@ const menuData = require("../data/menu-data.json");
 const commandData = require("../data/command-data.json");
 
 const TRANSCRIPT_LOG_CHANNEL_ID = "915884828153511946";
-const STAFF_ROLE_IDS = ["913864890916147270", "857990235194261514"];
 
 const ROLE_CATEGORIES = require("../data/role-categories.js");
 
@@ -117,7 +116,7 @@ module.exports = {
                 const customId = interaction.customId;
 
                 // --- A. Transcript Logging ---
-                if (customId.startsWith("send_to_logs")) {
+                if (customId === "send_to_logs") {
                     const attachment = interaction.message.attachments.first();
                     if (!attachment) {
                         return interaction.reply({

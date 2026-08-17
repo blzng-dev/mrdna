@@ -73,7 +73,7 @@ module.exports = {
             // Generate Transcript Text
             let transcript = allMessages
                 .map((m) => {
-                    const time = new Date(m.createdTimestamp).toLocaleString();
+                    const time = new Date(m.createdTimestamp).toLocaleString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
                     const content = m.content || "[No Content]";
                     const attach =
                         m.attachments.size > 0
@@ -99,11 +99,9 @@ module.exports = {
 
             let finalContent = `Transcript generated for "${interaction.channel.name}" (${interaction.channel.id})\nParticipants: ${participantsText}`;
 
-            const buttonCustomId = "send_to_logs";
-
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId(buttonCustomId)
+                    .setCustomId("send_to_logs")
                     .setLabel("Send to Logs")
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji("📂")

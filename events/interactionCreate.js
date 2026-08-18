@@ -323,7 +323,7 @@ module.exports = {
                 // --- F. Revive Role Toggle ---
 
                 if (customId === "toggle_revive_role") {
-                    const roleId = "858331630997340170";
+                    const roleId = "1539115115280994304";
                     const member = interaction.member;
                     const hasRole = member.roles.cache.has(roleId);
 

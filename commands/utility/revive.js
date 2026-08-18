@@ -1,6 +1,12 @@
-const { SlashCommandBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const {
+    SlashCommandBuilder,
+    MessageFlags,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+} = require("discord.js");
 
-const REVIVE_ROLE_ID = "858331630997340170";
+const REVIVE_ROLE_ID = "1539115115280994304";
 const LOG_CHANNEL_ID = "1350108952041492561";
 const GLOBAL_COOLDOWN_MS = 4 * 60 * 60 * 1000;
 const BYPASS_COOLDOWN_MS = 2 * 60 * 60 * 1000;
@@ -90,17 +96,15 @@ module.exports = {
                 }
             }
 
-            // 5. Action Row for Role Toggle
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId("toggle_revive_role")
                     .setLabel("Toggle Revive Notifications")
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Primary),
             );
 
-            // 6. Send Revive
             await interaction.reply({
-                content: `<@&${REVIVE_ROLE_ID}> Let's discuss: ${topic}\n-# if you don't want to get pinged, go to <id:customize> & remove the role`,
+                content: `<@&${REVIVE_ROLE_ID}> discuss: ${topic}\n-# if you don't want to get pinged, click the button below`,
                 components: [row],
                 allowedMentions: { roles: [REVIVE_ROLE_ID] },
             });

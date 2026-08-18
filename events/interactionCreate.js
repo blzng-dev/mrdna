@@ -319,6 +319,29 @@ module.exports = {
                     }
                     return;
                 }
+
+                // --- F. Revive Role Toggle ---
+
+                if (customId === "toggle_revive_role") {
+                    const roleId = "858331630997340170";
+                    const member = interaction.member;
+                    const hasRole = member.roles.cache.has(roleId);
+
+                    if (hasRole) {
+                        await member.roles.remove(roleId);
+                        await interaction.reply({
+                            content: `**Removed**: <@&${roleId}>\n-# You will not get pinged for chat revives`,
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    } else {
+                        await member.roles.add(roleId);
+                        await interaction.reply({
+                            content: `**Added**: <@&${roleId}>\n-# You will get pinged for chat revives`,
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+                    return;
+                }
             }
 
             // 4. SELECT MENUS

@@ -111,6 +111,30 @@ module.exports = {
                 return;
             }
 
+            // 2.5 MODAL SUBMITS
+            if (interaction.isModalSubmit()) {
+                let commandName = null;
+                if (interaction.customId === 'message_modal' || interaction.customId.startsWith('message_modal_')) {
+                    commandName = 'message';
+                } else if (interaction.customId.startsWith('edit_message_modal')) {
+                    commandName = 'Edit Message';
+                } else if (interaction.customId.startsWith('add_link_modal_')) {
+                    commandName = 'Add Link Button';
+                }
+                
+                if (commandName) {
+                    const command = interaction.client.commands.get(commandName);
+                    if (command && command.handleModal) {
+                        try {
+                            await command.handleModal(interaction);
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                }
+                return;
+            }
+
             // 3. BUTTONS
             if (interaction.isButton()) {
                 const customId = interaction.customId;

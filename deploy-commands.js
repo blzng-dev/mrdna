@@ -7,7 +7,9 @@ const path = require("node:path");
 
 const commands = [];
 const foldersPath = path.join(__dirname, "commands");
-const commandFolders = fs.readdirSync(foldersPath);
+const commandFolders = fs
+    .readdirSync(foldersPath)
+    .filter((folder) => !folder.startsWith("."));
 
 for (const folder of commandFolders) {
     const commandsPath = path.join(foldersPath, folder);

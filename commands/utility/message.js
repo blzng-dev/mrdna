@@ -11,6 +11,7 @@ const {
     StringSelectMenuOptionBuilder,
     ChannelType
 } = require('discord.js');
+const { resolveEmojisInText } = require('../../utils/emojiResolver');
 
 const STRINGS = {
     command: {
@@ -170,6 +171,8 @@ module.exports = {
             const textfield = interaction.fields?.fields?.get('message_input');
             rawText = textfield?.value || '';
         }
+
+        rawText = await resolveEmojisInText(interaction.client, rawText);
 
         const components = parseComponents(rawText);
 

@@ -7,6 +7,13 @@ module.exports = {
     async execute(client) {
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
+        try {
+            await client.application?.emojis?.fetch();
+            console.log(`Application emojis cached: ${client.application?.emojis?.cache?.size || 0}`);
+        } catch (err) {
+            console.warn("Could not prefetch application emojis:", err.message);
+        }
+
         const statusMessages = [
             {
                 name: "sequencing DNA",

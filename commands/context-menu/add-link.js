@@ -10,6 +10,8 @@ const {
     Routes
 } = require('discord.js');
 
+const { findEmojiByNameOrId } = require('../../utils/emojiResolver');
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
         .setName('Add Link Button')
@@ -61,19 +63,6 @@ module.exports = {
         const url = interaction.fields.getTextInputValue('button_url');
         const emojiStr = interaction.fields.getTextInputValue('button_emoji');
 
-        function parseEmoji(str) {
-            if (!str) return null;
-            const customEmojiRegex = /<(a?):([^:]+):(\d+)>/;
-            const match = str.match(customEmojiRegex);
-            if (match) {
-                return { name: match[2], id: match[3], animated: match[1] === 'a' };
-            }
-            if (/^\d+$/.test(str)) {
-                return { id: str }; // Assuming it's an ID
-            }
-            return { name: str };
-        }
-
         const button = {
             type: 2,
             style: 5,
@@ -81,9 +70,11 @@ module.exports = {
             url: url
         };
 
-        const emoji = parseEmoji(emojiStr);
-        if (emoji) {
-            button.emoji = emoji;
+        if (emojiStr && emojiStr.trim().length > 0) {
+            const emoji = await findEmojiByNameOrId(interaction.client, emojiStr);
+            if (emoji) {
+                button.emoji = emoji;
+            }
         }
 
         try {

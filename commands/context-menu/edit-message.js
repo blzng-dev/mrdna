@@ -5,10 +5,15 @@ const {
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
-    ActionRowBuilder,
     MessageFlags,
-    Routes
+    Routes,
+    LabelBuilder,
+    ChannelSelectMenuBuilder,
+    StringSelectMenuBuilder,
+    StringSelectMenuOptionBuilder,
+    ChannelType
 } = require('discord.js');
+const { resolveEmojisInText } = require('../../utils/emojiResolver');
 
 function parseTextAndSeparators(rawText) {
     const parts = rawText.split(/^(\d+)?---(true|false)?$/m);
@@ -156,30 +161,80 @@ module.exports = {
             text = rawMessage.content;
         }
 
+        // Simplify <a:name:id> and <:name:id> to :name: for clean editing
+        if (text) {
+            text = text.replace(/<a?:([a-zA-Z0-9_]+):\d+>/g, ':$1:');
+        }
+
         if (text.length > 4000) {
             text = text.substring(0, 4000);
         }
 
-        const modal = new ModalBuilder()
-            .setCustomId(`edit_message_modal_${interaction.targetId}`)
-            .setTitle('Edit Message');
-
         const textInput = new TextInputBuilder()
             .setCustomId('message_input')
-            .setLabel('Text')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
             .setValue(text || ' ');
 
-        const actionRow = new ActionRowBuilder().addComponents(textInput);
-        modal.addComponents(actionRow);
+        const textLabel = new LabelBuilder()
+            .setLabel('Text')
+            .setTextInputComponent(textInput);
+
+        const channelSelect = new ChannelSelectMenuBuilder()
+            .setCustomId('message_channel')
+            .setPlaceholder('Select a channel (defaults to current)')
+            .setRequired(false)
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+
+        const channelLabel = new LabelBuilder()
+            .setLabel('Target Channel')
+            .setChannelSelectMenuComponent(channelSelect);
+
+        const mentionsSelect = new StringSelectMenuBuilder()
+            .setCustomId('message_mentions')
+            .setPlaceholder('Mention users/roles? (defaults to No)')
+            .setRequired(false)
+            .addOptions(
+                new StringSelectMenuOptionBuilder().setLabel('No (Default)').setValue('false'),
+                new StringSelectMenuOptionBuilder().setLabel('Yes').setValue('true')
+            );
+
+        const mentionsLabel = new LabelBuilder()
+            .setLabel('Allow Mentions')
+            .setStringSelectMenuComponent(mentionsSelect);
+
+        const modal = new ModalBuilder()
+            .setCustomId(`edit_message_modal_${interaction.targetId}`)
+            .setTitle('Edit Message')
+            .addComponents(textLabel, channelLabel, mentionsLabel);
 
         await interaction.showModal(modal);
     },
 
     async handleModal(interaction) {
         const messageId = interaction.customId.replace('edit_message_modal_', '');
-        const rawText = interaction.fields.getTextInputValue('message_input');
+        
+        let rawText = '';
+        try {
+            rawText = interaction.fields.getTextInputValue('message_input');
+        } catch {
+            const textfield = interaction.fields?.fields?.get('message_input');
+            rawText = textfield?.value || '';
+        }
+
+        rawText = await resolveEmojisInText(interaction.client, rawText);
+
+        let targetChannelId = interaction.channelId;
+        const channelField = interaction.fields?.fields?.get('message_channel');
+        if (channelField?.values?.length > 0) {
+            targetChannelId = channelField.values[0];
+        }
+
+        let mentions = false;
+        const mentionsField = interaction.fields?.fields?.get('message_mentions');
+        if (mentionsField?.values?.length > 0) {
+            mentions = mentionsField.values[0] === 'true';
+        }
 
         const components = parseComponents(rawText);
 
@@ -199,25 +254,57 @@ module.exports = {
             const existingOtherComponents = rawMessage.components ? 
                 rawMessage.components.filter(c => c.type === 1) : [];
 
-            await interaction.client.rest.patch(
-                Routes.channelMessage(interaction.channelId, messageId),
-                {
-                    body: {
-                        content: '', // Clear old content if migrating to V2
-                        components: [...components, ...existingOtherComponents],
-                        flags: MessageFlags.IsComponentsV2 || (1 << 15)
-                    }
-                }
-            );
+            const allowedMentionsPayload = mentions ? { parse: ['users', 'roles', 'everyone'] } : { parse: [] };
 
-            await interaction.reply({
-                content: 'Message edited successfully.',
-                flags: MessageFlags.Ephemeral
-            });
+            if (targetChannelId !== interaction.channelId) {
+                // Post edited message in the new channel
+                await interaction.client.rest.post(
+                    Routes.channelMessages(targetChannelId),
+                    {
+                        body: {
+                            components: [...components, ...existingOtherComponents],
+                            flags: MessageFlags.IsComponentsV2 || (1 << 15),
+                            allowed_mentions: allowedMentionsPayload
+                        }
+                    }
+                );
+
+                // Delete old message from the original channel
+                try {
+                    await interaction.client.rest.delete(
+                        Routes.channelMessage(interaction.channelId, messageId)
+                    );
+                } catch (delErr) {
+                    console.warn('Failed to delete old message during move:', delErr);
+                }
+
+                await interaction.reply({
+                    content: `Message moved and edited in <#${targetChannelId}> successfully.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            } else {
+                // Edit in-place
+                await interaction.client.rest.patch(
+                    Routes.channelMessage(interaction.channelId, messageId),
+                    {
+                        body: {
+                            content: '', // Clear old content if migrating to V2
+                            components: [...components, ...existingOtherComponents],
+                            flags: MessageFlags.IsComponentsV2 || (1 << 15),
+                            allowed_mentions: allowedMentionsPayload
+                        }
+                    }
+                );
+
+                await interaction.reply({
+                    content: 'Message edited successfully.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
         } catch (error) {
             console.error(error);
             await interaction.reply({
-                content: 'Failed to edit message.',
+                content: 'Failed to edit/move message.',
                 flags: MessageFlags.Ephemeral
             });
         }

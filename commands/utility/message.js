@@ -28,6 +28,82 @@ const STRINGS = {
     }
 };
 
+function parseTextAndSeparators(rawText) {
+    const parts = rawText.split(/^(\d+)?---(true|false)?$/m);
+    const components = [];
+
+    for (let i = 0; i < parts.length; i += 3) {
+        const textSection = parts[i].trim();
+        if (textSection.length > 0) {
+            components.push({
+                type: 10,
+                content: textSection
+            });
+        }
+
+        if (i + 3 < parts.length) {
+            const sizeStr = parts[i + 1];
+            const divStr = parts[i + 2];
+            
+            const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
+            const divider = divStr === 'false' ? false : true;
+
+            components.push({
+                type: 14,
+                divider: divider,
+                spacing: spacing
+            });
+        }
+    }
+    return components;
+}
+
+function parseComponents(rawText) {
+    const components = [];
+    const containerRegex = /(?:^|\n)c---([^\n]*)\r?\n([\s\S]*?)(?:\r?\n\/?c---(?:\r?\n|$)|$)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = containerRegex.exec(rawText)) !== null) {
+        const textBefore = rawText.slice(lastIndex, match.index);
+        if (textBefore.trim().length > 0) {
+            components.push(...parseTextAndSeparators(textBefore));
+        }
+
+        const header = match[1].trim();
+        const containerContent = match[2];
+        const containerComponents = parseTextAndSeparators(containerContent);
+
+        if (containerComponents.length > 0) {
+            const container = {
+                type: 17,
+                components: containerComponents
+            };
+
+            if (header) {
+                const hexMatch = header.match(/#?([0-9a-fA-F]{6})/);
+                if (hexMatch) {
+                    container.accent_color = parseInt(hexMatch[1], 16);
+                }
+                if (/\bspoiler\b/i.test(header)) {
+                    container.spoiler = true;
+                }
+            }
+
+            components.push(container);
+        }
+
+        lastIndex = containerRegex.lastIndex;
+    }
+
+    const remainingText = rawText.slice(lastIndex);
+    if (remainingText.trim().length > 0) {
+        components.push(...parseTextAndSeparators(remainingText));
+    }
+
+    return components;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName(STRINGS.command.name)
@@ -95,32 +171,7 @@ module.exports = {
             rawText = textfield?.value || '';
         }
 
-        const textParts = rawText.split(/^(\d+)?---(true|false)?$/m);
-        const components = [];
-
-        for (let i = 0; i < textParts.length; i += 3) {
-            const textSection = textParts[i].trim();
-            if (textSection.length > 0) {
-                components.push({
-                    type: 10,
-                    content: textSection
-                });
-            }
-
-            if (i + 3 < textParts.length) {
-                const sizeStr = textParts[i + 1];
-                const divStr = textParts[i + 2];
-                
-                const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
-                const divider = divStr === 'false' ? false : true;
-
-                components.push({
-                    type: 14,
-                    divider: divider,
-                    spacing: spacing
-                });
-            }
-        }
+        const components = parseComponents(rawText);
 
         if (components.length === 0) {
             return interaction.reply({

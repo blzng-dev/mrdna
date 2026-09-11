@@ -10,6 +10,124 @@ const {
     Routes
 } = require('discord.js');
 
+function parseTextAndSeparators(rawText) {
+    const parts = rawText.split(/^(\d+)?---(true|false)?$/m);
+    const components = [];
+
+    for (let i = 0; i < parts.length; i += 3) {
+        const textSection = parts[i].trim();
+        if (textSection.length > 0) {
+            components.push({
+                type: 10,
+                content: textSection
+            });
+        }
+
+        if (i + 3 < parts.length) {
+            const sizeStr = parts[i + 1];
+            const divStr = parts[i + 2];
+            
+            const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
+            const divider = divStr === 'false' ? false : true;
+
+            components.push({
+                type: 14,
+                divider: divider,
+                spacing: spacing
+            });
+        }
+    }
+    return components;
+}
+
+function parseComponents(rawText) {
+    const components = [];
+    const containerRegex = /(?:^|\n)c---([^\n]*)\r?\n([\s\S]*?)(?:\r?\n\/?c---(?:\r?\n|$)|$)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = containerRegex.exec(rawText)) !== null) {
+        const textBefore = rawText.slice(lastIndex, match.index);
+        if (textBefore.trim().length > 0) {
+            components.push(...parseTextAndSeparators(textBefore));
+        }
+
+        const header = match[1].trim();
+        const containerContent = match[2];
+        const containerComponents = parseTextAndSeparators(containerContent);
+
+        if (containerComponents.length > 0) {
+            const container = {
+                type: 17,
+                components: containerComponents
+            };
+
+            if (header) {
+                const hexMatch = header.match(/#?([0-9a-fA-F]{6})/);
+                if (hexMatch) {
+                    container.accent_color = parseInt(hexMatch[1], 16);
+                }
+                if (/\bspoiler\b/i.test(header)) {
+                    container.spoiler = true;
+                }
+            }
+
+            components.push(container);
+        }
+
+        lastIndex = containerRegex.lastIndex;
+    }
+
+    const remainingText = rawText.slice(lastIndex);
+    if (remainingText.trim().length > 0) {
+        components.push(...parseTextAndSeparators(remainingText));
+    }
+
+    return components;
+}
+
+function reconstructText(components) {
+    function formatTextAndSeparators(comps) {
+        let res = '';
+        for (const comp of comps) {
+            if (comp.type === 10) {
+                res += (res.length > 0 && !res.endsWith('\n') ? '\n' : '') + comp.content;
+            } else if (comp.type === 14) {
+                const spacing = comp.spacing !== undefined ? comp.spacing : 1;
+                const divider = comp.divider !== undefined ? comp.divider : true;
+                const spacingStr = spacing !== 1 ? spacing.toString() : '';
+                const divStrFinal = divider === false ? 'false' : '';
+                res += '\n' + spacingStr + '---' + divStrFinal + '\n';
+            }
+        }
+        return res;
+    }
+
+    let text = '';
+    for (const comp of components) {
+        if (comp.type === 10) {
+            text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + comp.content;
+        } else if (comp.type === 14) {
+            const spacing = comp.spacing !== undefined ? comp.spacing : 1;
+            const divider = comp.divider !== undefined ? comp.divider : true;
+            const spacingStr = spacing !== 1 ? spacing.toString() : '';
+            const divStrFinal = divider === false ? 'false' : '';
+            text += '\n' + spacingStr + '---' + divStrFinal + '\n';
+        } else if (comp.type === 17 && comp.components) {
+            let header = 'c---';
+            if (comp.accent_color !== undefined && comp.accent_color !== null) {
+                header += '#' + comp.accent_color.toString(16).padStart(6, '0').toUpperCase();
+            }
+            if (comp.spoiler) {
+                header += (header.length > 4 ? ' ' : '') + 'spoiler';
+            }
+            const innerText = formatTextAndSeparators(comp.components);
+            text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + header + '\n' + innerText.trim() + '\n/c---\n';
+        }
+    }
+    return text.trim();
+}
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
         .setName('Edit Message')
@@ -31,18 +149,7 @@ module.exports = {
         let text = '';
 
         if (rawMessage.components) {
-            for (const comp of rawMessage.components) {
-                if (comp.type === 10) {
-                    text += comp.content;
-                } else if (comp.type === 14) {
-                    const spacing = comp.spacing !== undefined ? comp.spacing : 1;
-                    const divider = comp.divider !== undefined ? comp.divider : true;
-
-                    const spacingStr = spacing !== 1 ? spacing.toString() : '';
-                    const divStrFinal = divider === false ? 'false' : '';
-                    text += `\n${spacingStr}---${divStrFinal}\n`;
-                }
-            }
+            text = reconstructText(rawMessage.components);
         }
 
         if (!text && rawMessage.content) {
@@ -62,7 +169,7 @@ module.exports = {
             .setLabel('Text')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setValue(text || ' '); // Must provide some value if empty but required
+            .setValue(text || ' ');
 
         const actionRow = new ActionRowBuilder().addComponents(textInput);
         modal.addComponents(actionRow);
@@ -74,32 +181,7 @@ module.exports = {
         const messageId = interaction.customId.replace('edit_message_modal_', '');
         const rawText = interaction.fields.getTextInputValue('message_input');
 
-        const parts = rawText.split(/^(\d+)?---(true|false)?$/m);
-        const components = [];
-
-        for (let i = 0; i < parts.length; i += 3) {
-            const textSection = parts[i].trim();
-            if (textSection.length > 0) {
-                components.push({
-                    type: 10,
-                    content: textSection
-                });
-            }
-
-            if (i + 3 < parts.length) {
-                const sizeStr = parts[i + 1];
-                const divStr = parts[i + 2];
-                
-                const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
-                const divider = divStr === 'false' ? false : true;
-
-                components.push({
-                    type: 14,
-                    divider: divider,
-                    spacing: spacing
-                });
-            }
-        }
+        const components = parseComponents(rawText);
 
         if (components.length === 0) {
             return interaction.reply({
@@ -113,8 +195,9 @@ module.exports = {
                 Routes.channelMessage(interaction.channelId, messageId)
             );
             
+            // Keep ActionRows (e.g. link buttons)
             const existingOtherComponents = rawMessage.components ? 
-                rawMessage.components.filter(c => c.type !== 10 && c.type !== 14) : [];
+                rawMessage.components.filter(c => c.type === 1) : [];
 
             await interaction.client.rest.patch(
                 Routes.channelMessage(interaction.channelId, messageId),

@@ -120,6 +120,12 @@ module.exports = {
                     commandName = 'Edit Message';
                 } else if (interaction.customId.startsWith('add_link_modal_')) {
                     commandName = 'Add Link Button';
+                } else if (interaction.customId.startsWith('replace_media_modal_')) {
+                    commandName = 'Replace Media';
+                } else if (interaction.customId.startsWith('add_media_modal_')) {
+                    commandName = 'Add Media';
+                } else if (interaction.customId.startsWith('remove_media_modal_')) {
+                    commandName = 'Remove Media';
                 }
                 
                 if (commandName) {

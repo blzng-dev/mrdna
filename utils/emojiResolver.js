@@ -1,29 +1,51 @@
-async function getEmojiCollection(client) {
-    if (client.application && (!client.application.emojis.cache || client.application.emojis.cache.size === 0)) {
+let lastFetchTime = 0;
+const FETCH_COOLDOWN_MS = 5000; // 5 seconds throttle
+
+async function getEmojiCollection(client, force = false) {
+    const shouldFetch = force || !client.application?.emojis?.cache || client.application.emojis.cache.size === 0;
+    if (client.application && shouldFetch) {
         try {
             await client.application.emojis.fetch();
+            lastFetchTime = Date.now();
         } catch (_) {}
     }
     return client.application?.emojis?.cache || null;
 }
 
+function matchEmoji(client, name) {
+    const appEmojis = client.application?.emojis?.cache;
+    if (appEmojis && appEmojis.size > 0) {
+        const found = appEmojis.find(e => e.name === name) || appEmojis.find(e => e.name.toLowerCase() === name.toLowerCase());
+        if (found) return found;
+    }
+    if (client.emojis && client.emojis.cache.size > 0) {
+        const found = client.emojis.cache.find(e => e.name === name) || client.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
+        if (found) return found;
+    }
+    return null;
+}
+
 async function resolveEmojisInText(client, text) {
     if (!text || !text.includes(':')) return text;
 
-    const appEmojis = await getEmojiCollection(client);
+    await getEmojiCollection(client, false);
+
+    // Check if there are any unmatched emoji names in the text
+    const matches = [...text.matchAll(/(?<!<a?):([a-zA-Z0-9_]+):(?!\d+>)/g)];
+    const hasUnmatched = matches.some(m => !matchEmoji(client, m[1]));
+
+    // If an emoji is not in cache, automatically fetch the latest emojis from Discord (without restarting!)
+    if (hasUnmatched && Date.now() - lastFetchTime > FETCH_COOLDOWN_MS) {
+        try {
+            await client.application?.emojis?.fetch();
+            lastFetchTime = Date.now();
+        } catch (_) {}
+    }
 
     return text.replace(/(?<!<a?):([a-zA-Z0-9_]+):(?!\d+>)/g, (match, name) => {
-        if (appEmojis && appEmojis.size > 0) {
-            const found = appEmojis.find(e => e.name === name) || appEmojis.find(e => e.name.toLowerCase() === name.toLowerCase());
-            if (found) {
-                return `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
-            }
-        }
-        if (client.emojis && client.emojis.cache.size > 0) {
-            const found = client.emojis.cache.find(e => e.name === name) || client.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
-            if (found) {
-                return `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
-            }
+        const found = matchEmoji(client, name);
+        if (found) {
+            return `<${found.animated ? 'a' : ''}:${found.name}:${found.id}>`;
         }
         return match;
     });
@@ -47,19 +69,20 @@ async function findEmojiByNameOrId(client, input) {
     // Clean :name: -> name
     const cleanName = str.replace(/^:|:$/g, '');
 
-    const appEmojis = await getEmojiCollection(client);
-    if (appEmojis && appEmojis.size > 0) {
-        const found = appEmojis.find(e => e.name === cleanName) || appEmojis.find(e => e.name.toLowerCase() === cleanName.toLowerCase());
-        if (found) {
-            return { name: found.name, id: found.id, animated: found.animated };
-        }
+    await getEmojiCollection(client, false);
+    let found = matchEmoji(client, cleanName);
+
+    // If not found in cache, pull latest from Discord
+    if (!found && Date.now() - lastFetchTime > FETCH_COOLDOWN_MS) {
+        try {
+            await client.application?.emojis?.fetch();
+            lastFetchTime = Date.now();
+            found = matchEmoji(client, cleanName);
+        } catch (_) {}
     }
 
-    if (client.emojis && client.emojis.cache.size > 0) {
-        const found = client.emojis.cache.find(e => e.name === cleanName) || client.emojis.cache.find(e => e.name.toLowerCase() === cleanName.toLowerCase());
-        if (found) {
-            return { name: found.name, id: found.id, animated: found.animated };
-        }
+    if (found) {
+        return { name: found.name, id: found.id, animated: found.animated };
     }
 
     // Fallback: Unicode name or raw string

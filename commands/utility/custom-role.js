@@ -226,7 +226,7 @@ async function handleCreate(
             const emojiId = customEmojiMatch[1];
             const emoji = guild.emojis.cache.get(emojiId);
             if (emoji) {
-                roleIconUrl = emoji.imageURL();
+                roleIconUrl = emoji.imageURL({ extension: 'png' });
             } else {
                 return replyInteraction.followUp({
                     content: "Could not find that custom emoji in this server.",
@@ -373,7 +373,7 @@ async function handleEdit(
             const emojiId = customEmojiMatch[1];
             const emoji = guild.emojis.cache.get(emojiId);
             if (emoji) {
-                roleIconUrl = emoji.imageURL();
+                roleIconUrl = emoji.imageURL({ extension: 'png' });
             } else {
                 return replyInteraction.followUp({
                     content: "Could not find that custom emoji in this server.",

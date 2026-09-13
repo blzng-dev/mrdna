@@ -11,87 +11,169 @@ const {
     ChannelSelectMenuBuilder,
     StringSelectMenuBuilder,
     StringSelectMenuOptionBuilder,
+    FileUploadBuilder,
+    AttachmentBuilder,
     ChannelType
 } = require('discord.js');
 const { resolveEmojisInText } = require('../../utils/emojiResolver');
 
-function parseTextAndSeparators(rawText) {
-    const parts = rawText.split(/^(\d+)?---(true|false)?$/m);
+function parseTextAndSeparators(rawText, allMediaItems, usedIndices) {
+    const lines = rawText.split(/\r?\n/);
     const components = [];
+    let currentTextLines = [];
 
-    for (let i = 0; i < parts.length; i += 3) {
-        const textSection = parts[i].trim();
-        if (textSection.length > 0) {
+    function flushText() {
+        const text = currentTextLines.join('\n').trim();
+        if (text.length > 0) {
             components.push({
                 type: 10,
-                content: textSection
+                content: text
             });
         }
+        currentTextLines = [];
+    }
 
-        if (i + 3 < parts.length) {
-            const sizeStr = parts[i + 1];
-            const divStr = parts[i + 2];
-            
+    for (const line of lines) {
+        const trimmed = line.trim();
+        const sepMatch = trimmed.match(/^(\d+)?---(true|false)?$/);
+        const mediaMatch = trimmed.match(/^-media(?:\[([\d\s,]+)\])?$/);
+
+        if (sepMatch) {
+            flushText();
+            const sizeStr = sepMatch[1];
+            const divStr = sepMatch[2];
             const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
             const divider = divStr === 'false' ? false : true;
-
             components.push({
                 type: 14,
                 divider: divider,
                 spacing: spacing
             });
+        } else if (mediaMatch) {
+            flushText();
+            if (allMediaItems && allMediaItems.length > 0) {
+                let galleryItems = [];
+                if (mediaMatch[1]) {
+                    const indices = mediaMatch[1].split(',').map(n => parseInt(n.trim(), 10) - 1).filter(n => !isNaN(n));
+                    for (const idx of indices) {
+                        if (allMediaItems[idx] && !usedIndices.has(idx)) {
+                            galleryItems.push(allMediaItems[idx]);
+                            usedIndices.add(idx);
+                        }
+                    }
+                } else {
+                    for (let i = 0; i < allMediaItems.length; i++) {
+                        if (!usedIndices.has(i)) {
+                            galleryItems.push(allMediaItems[i]);
+                            usedIndices.add(i);
+                        }
+                    }
+                }
+                if (galleryItems.length > 0) {
+                    components.push({
+                        type: 12,
+                        items: galleryItems.slice(0, 10)
+                    });
+                }
+            }
+        } else {
+            currentTextLines.push(line);
         }
     }
+    flushText();
     return components;
 }
 
-function parseComponents(rawText) {
+function parseComponents(rawText, allMediaItems) {
+    const usedIndices = new Set();
     const components = [];
-    const containerRegex = /(?:^|\n)c---([^\n]*)\r?\n([\s\S]*?)(?:\r?\n\/?c---(?:\r?\n|$)|$)/g;
-    let lastIndex = 0;
-    let match;
+    const lines = rawText.split(/\r?\n/);
 
-    while ((match = containerRegex.exec(rawText)) !== null) {
-        const textBefore = rawText.slice(lastIndex, match.index);
-        if (textBefore.trim().length > 0) {
-            components.push(...parseTextAndSeparators(textBefore));
-        }
+    let insideContainer = false;
+    let containerHeader = '';
+    let containerLines = [];
+    let outsideLines = [];
 
-        const header = match[1].trim();
-        const containerContent = match[2];
-        const containerComponents = parseTextAndSeparators(containerContent);
-
-        if (containerComponents.length > 0) {
-            const container = {
-                type: 17,
-                components: containerComponents
-            };
-
-            if (header) {
-                const hexMatch = header.match(/#?([0-9a-fA-F]{6})/);
-                if (hexMatch) {
-                    container.accent_color = parseInt(hexMatch[1], 16);
-                }
-                if (/\bspoiler\b/i.test(header)) {
-                    container.spoiler = true;
-                }
+    function flushOutside() {
+        if (outsideLines.length > 0) {
+            const text = outsideLines.join('\n');
+            if (text.trim().length > 0) {
+                components.push(...parseTextAndSeparators(text, allMediaItems, usedIndices));
             }
-
-            components.push(container);
+            outsideLines = [];
         }
-
-        lastIndex = containerRegex.lastIndex;
     }
 
-    const remainingText = rawText.slice(lastIndex);
-    if (remainingText.trim().length > 0) {
-        components.push(...parseTextAndSeparators(remainingText));
+    function flushContainer() {
+        if (containerLines.length > 0) {
+            const text = containerLines.join('\n');
+            const innerComponents = parseTextAndSeparators(text, allMediaItems, usedIndices);
+            if (innerComponents.length > 0) {
+                const container = {
+                    type: 17,
+                    components: innerComponents
+                };
+                if (containerHeader) {
+                    const hexMatch = containerHeader.match(/#?([0-9a-fA-F]{6})/);
+                    if (hexMatch) {
+                        container.accent_color = parseInt(hexMatch[1], 16);
+                    }
+                    if (/\bspoiler\b/i.test(containerHeader)) {
+                        container.spoiler = true;
+                    }
+                }
+                components.push(container);
+            }
+            containerLines = [];
+            containerHeader = '';
+        }
+    }
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!insideContainer && trimmed.startsWith('c---')) {
+            flushOutside();
+            insideContainer = true;
+            containerHeader = trimmed.slice(4).trim();
+            containerLines = [];
+        } else if (insideContainer && (trimmed === '/c---' || trimmed === 'c---')) {
+            flushContainer();
+            insideContainer = false;
+        } else if (insideContainer) {
+            containerLines.push(line);
+        } else {
+            outsideLines.push(line);
+        }
+    }
+
+    if (insideContainer) {
+        flushContainer();
+    } else {
+        flushOutside();
+    }
+
+    if (allMediaItems && allMediaItems.length > 0) {
+        const remainingItems = [];
+        for (let i = 0; i < allMediaItems.length; i++) {
+            if (!usedIndices.has(i)) {
+                remainingItems.push(allMediaItems[i]);
+                usedIndices.add(i);
+            }
+        }
+        if (remainingItems.length > 0) {
+            components.push({
+                type: 12,
+                items: remainingItems.slice(0, 10)
+            });
+        }
     }
 
     return components;
 }
 
 function reconstructText(components) {
+    let globalImageCounter = 0;
+
     function formatTextAndSeparators(comps) {
         let res = '';
         for (const comp of comps) {
@@ -103,6 +185,13 @@ function reconstructText(components) {
                 const spacingStr = spacing !== 1 ? spacing.toString() : '';
                 const divStrFinal = divider === false ? 'false' : '';
                 res += '\n' + spacingStr + '---' + divStrFinal + '\n';
+            } else if (comp.type === 12 && comp.items) {
+                const indices = [];
+                for (let i = 0; i < comp.items.length; i++) {
+                    globalImageCounter++;
+                    indices.push(globalImageCounter);
+                }
+                res += (res.length > 0 && !res.endsWith('\n') ? '\n' : '') + `-media[${indices.join(', ')}]\n`;
             }
         }
         return res;
@@ -118,6 +207,13 @@ function reconstructText(components) {
             const spacingStr = spacing !== 1 ? spacing.toString() : '';
             const divStrFinal = divider === false ? 'false' : '';
             text += '\n' + spacingStr + '---' + divStrFinal + '\n';
+        } else if (comp.type === 12 && comp.items) {
+            const indices = [];
+            for (let i = 0; i < comp.items.length; i++) {
+                globalImageCounter++;
+                indices.push(globalImageCounter);
+            }
+            text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + `-media[${indices.join(', ')}]\n`;
         } else if (comp.type === 17 && comp.components) {
             let header = 'c---';
             if (comp.accent_color !== undefined && comp.accent_color !== null) {
@@ -131,6 +227,19 @@ function reconstructText(components) {
         }
     }
     return text.trim();
+}
+
+function collectAllMediaItems(components) {
+    if (!components) return [];
+    let list = [];
+    for (const comp of components) {
+        if (comp.type === 12 && comp.items) {
+            list.push(...comp.items);
+        } else if (comp.type === 17 && comp.components) {
+            list.push(...collectAllMediaItems(comp.components));
+        }
+    }
+    return list;
 }
 
 module.exports = {
@@ -203,15 +312,27 @@ module.exports = {
             .setLabel('Allow Mentions')
             .setStringSelectMenuComponent(mentionsSelect);
 
+        const fileUpload = new FileUploadBuilder()
+            .setCustomId('message_files')
+            .setRequired(false)
+            .setMinValues(0)
+            .setMaxValues(10);
+
+        const fileLabel = new LabelBuilder()
+            .setLabel('Upload New Image(s) (Appended to index list)')
+            .setFileUploadComponent(fileUpload);
+
         const modal = new ModalBuilder()
             .setCustomId(`edit_message_modal_${interaction.targetId}`)
             .setTitle('Edit Message')
-            .addComponents(textLabel, channelLabel, mentionsLabel);
+            .addComponents(textLabel, channelLabel, mentionsLabel, fileLabel);
 
         await interaction.showModal(modal);
     },
 
     async handleModal(interaction) {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
         const messageId = interaction.customId.replace('edit_message_modal_', '');
         
         let rawText = '';
@@ -236,19 +357,54 @@ module.exports = {
             mentions = mentionsField.values[0] === 'true';
         }
 
-        const components = parseComponents(rawText);
+        // Extract newly uploaded files if any
+        let attachments = [];
+        try {
+            const files = interaction.fields.getUploadedFiles('message_files');
+            if (files && files.size > 0) attachments = Array.from(files.values());
+        } catch (_) {}
+        if (attachments.length === 0) {
+            if (interaction.fields?.attachments?.size > 0) {
+                attachments = Array.from(interaction.fields.attachments.values());
+            } else if (interaction.data?.resolved?.attachments) {
+                attachments = Object.values(interaction.data.resolved.attachments);
+            }
+        }
 
-        if (components.length === 0) {
-            return interaction.reply({
-                content: 'No content was provided.',
-                flags: MessageFlags.Ephemeral
-            });
+        const filesToSend = [];
+        const newMediaItems = [];
+        for (let i = 0; i < attachments.length; i++) {
+            const att = attachments[i];
+            let filename = att.name || `image_${Date.now()}_${i + 1}.png`;
+            filename = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+            if (att.url) {
+                filesToSend.push(new AttachmentBuilder(att.url, { name: filename }));
+                newMediaItems.push({
+                    media: { url: `attachment://${filename}` }
+                });
+            }
         }
 
         try {
+            const channel = await interaction.client.channels.fetch(interaction.channelId);
+            const targetMessage = await channel.messages.fetch(messageId);
+
             const rawMessage = await interaction.client.rest.get(
                 Routes.channelMessage(interaction.channelId, messageId)
             );
+
+            // Existing media items in order
+            const existingMediaItems = collectAllMediaItems(rawMessage.components);
+            // All media items = existing items + newly uploaded items
+            const allMediaItems = [...existingMediaItems, ...newMediaItems];
+
+            const components = parseComponents(rawText, allMediaItems);
+
+            if (components.length === 0) {
+                return interaction.editReply({
+                    content: 'No content was provided.'
+                });
+            }
             
             // Keep ActionRows (e.g. link buttons)
             const existingOtherComponents = rawMessage.components ? 
@@ -258,54 +414,48 @@ module.exports = {
 
             if (targetChannelId !== interaction.channelId) {
                 // Post edited message in the new channel
-                await interaction.client.rest.post(
-                    Routes.channelMessages(targetChannelId),
-                    {
-                        body: {
-                            components: [...components, ...existingOtherComponents],
-                            flags: MessageFlags.IsComponentsV2 || (1 << 15),
-                            allowed_mentions: allowedMentionsPayload
-                        }
-                    }
-                );
+                const targetChannel = await interaction.client.channels.fetch(targetChannelId);
+                const sendOptions = {
+                    components: [...components, ...existingOtherComponents],
+                    flags: MessageFlags.IsComponentsV2 || (1 << 15),
+                    allowedMentions: allowedMentionsPayload
+                };
+                if (filesToSend.length > 0) {
+                    sendOptions.files = filesToSend;
+                }
+                await targetChannel.send(sendOptions);
 
                 // Delete old message from the original channel
                 try {
-                    await interaction.client.rest.delete(
-                        Routes.channelMessage(interaction.channelId, messageId)
-                    );
+                    await targetMessage.delete();
                 } catch (delErr) {
                     console.warn('Failed to delete old message during move:', delErr);
                 }
 
-                await interaction.reply({
-                    content: `Message moved and edited in <#${targetChannelId}> successfully.`,
-                    flags: MessageFlags.Ephemeral
+                await interaction.editReply({
+                    content: `Message moved and edited in <#${targetChannelId}> successfully.`
                 });
             } else {
                 // Edit in-place
-                await interaction.client.rest.patch(
-                    Routes.channelMessage(interaction.channelId, messageId),
-                    {
-                        body: {
-                            content: '', // Clear old content if migrating to V2
-                            components: [...components, ...existingOtherComponents],
-                            flags: MessageFlags.IsComponentsV2 || (1 << 15),
-                            allowed_mentions: allowedMentionsPayload
-                        }
-                    }
-                );
+                const editOptions = {
+                    content: '',
+                    components: [...components, ...existingOtherComponents],
+                    flags: MessageFlags.IsComponentsV2 || (1 << 15),
+                    allowedMentions: allowedMentionsPayload
+                };
+                if (filesToSend.length > 0) {
+                    editOptions.files = filesToSend;
+                }
+                await targetMessage.edit(editOptions);
 
-                await interaction.reply({
-                    content: 'Message edited successfully.',
-                    flags: MessageFlags.Ephemeral
+                await interaction.editReply({
+                    content: 'Message edited successfully.'
                 });
             }
         } catch (error) {
             console.error(error);
-            await interaction.reply({
-                content: 'Failed to edit/move message.',
-                flags: MessageFlags.Ephemeral
+            await interaction.editReply({
+                content: 'Failed to edit/move message.'
             });
         }
     }

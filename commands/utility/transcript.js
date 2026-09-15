@@ -77,18 +77,92 @@ module.exports = {
 
             allMessages.reverse();
 
+            // Helper function to extract text content from Components V2
+            function extractComponentText(component) {
+                if (!component) return "";
+                const data = component.data || component;
+                const parts = [];
+
+                // Text Display (Components V2) / Content / Text
+                if (component.content || data.content) {
+                    parts.push(component.content || data.content);
+                } else if (component.text || data.text) {
+                    parts.push(component.text || data.text);
+                }
+
+                // Title / Header
+                if (component.title || data.title) {
+                    parts.push(component.title || data.title);
+                }
+
+                // Description
+                if (component.description || data.description) {
+                    parts.push(component.description || data.description);
+                }
+
+                // Nested components (ActionRow, Container, Section, etc.)
+                const children = component.components || data.components;
+                if (Array.isArray(children)) {
+                    for (const child of children) {
+                        const childText = extractComponentText(child);
+                        if (childText) parts.push(childText);
+                    }
+                }
+
+                // Section accessory
+                const accessory = component.accessory || data.accessory;
+                if (accessory) {
+                    const accText = extractComponentText(accessory);
+                    if (accText) parts.push(accText);
+                }
+
+                return parts.join("\n");
+            }
+
+            function formatMessageContent(m) {
+                const parts = [];
+
+                // 1. Text Content
+                if (m.content && m.content.trim().length > 0) {
+                    parts.push(m.content);
+                }
+
+                // 2. Components V2 Text Content
+                if (m.components && m.components.length > 0) {
+                    m.components.forEach((comp) => {
+                        const compText = extractComponentText(comp);
+                        if (compText && compText.trim().length > 0) {
+                            parts.push(compText.trim());
+                        }
+                    });
+                }
+
+                // 3. Attachments
+                if (m.attachments && m.attachments.size > 0) {
+                    parts.push(`[Attachments: ${m.attachments.map((a) => a.url).join(", ")}]`);
+                }
+
+                if (parts.length === 0) {
+                    return "[No Content]";
+                }
+
+                return parts.join("\n");
+            }
+
             // Generate Transcript Text
             let transcript = allMessages
                 .map((m) => {
-                    const time = new Date(m.createdTimestamp).toLocaleString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-                    const content = m.content || "[No Content]";
-                    const attach =
-                        m.attachments.size > 0
-                            ? ` [Attachments: ${m.attachments
-                                  .map((a) => a.url)
-                                  .join(", ")}]`
-                            : "";
-                    return `${time} ${m.author.tag}: ${content}${attach}`;
+                    const time = new Date(m.createdTimestamp).toLocaleString("en-US", {
+                        month: "2-digit",
+                        day: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                    });
+                    const content = formatMessageContent(m);
+                    const authorTag = m.author ? (m.author.tag || m.author.username) : "Unknown";
+                    return `${time} ${authorTag}: ${content}`;
                 })
                 .join("\n");
 

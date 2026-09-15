@@ -45,8 +45,10 @@ const rest = new REST().setToken(token);
         console.log(
             `Successfully reloaded ${data.length} application (/) commands.`
         );
+        process.exit(0);
     } catch (error) {
         // And of course, make sure you catch and log any errors!
         console.error(error);
+        process.exit(1);
     }
 })();

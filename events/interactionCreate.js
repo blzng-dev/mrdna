@@ -113,6 +113,18 @@ module.exports = {
 
             // 2.5 MODAL SUBMITS
             if (interaction.isModalSubmit()) {
+                if (interaction.customId.startsWith('forum_title_modal_')) {
+                    const messageCommand = interaction.client.commands.get('message');
+                    if (messageCommand && messageCommand.handleForumTitleModal) {
+                        try {
+                            await messageCommand.handleForumTitleModal(interaction);
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                    return;
+                }
+
                 let commandName = null;
                 if (interaction.customId === 'message_modal' || interaction.customId.startsWith('message_modal_')) {
                     commandName = 'message';
@@ -144,6 +156,19 @@ module.exports = {
             // 3. BUTTONS
             if (interaction.isButton()) {
                 const customId = interaction.customId;
+
+                // --- Forum Post Setup Buttons ---
+                if (customId.startsWith('forum_title_btn_') || customId.startsWith('forum_confirm_') || customId.startsWith('forum_cancel_')) {
+                    const messageCommand = interaction.client.commands.get('message');
+                    if (messageCommand && messageCommand.handleForumButton) {
+                        try {
+                            await messageCommand.handleForumButton(interaction);
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                    return;
+                }
 
                 // --- A. Transcript Logging ---
                 if (customId === "send_to_logs") {
@@ -378,6 +403,18 @@ module.exports = {
             else if (interaction.isStringSelectMenu()) {
                 const customId = interaction.customId;
                 const selectedValue = interaction.values[0];
+
+                if (customId.startsWith('forum_tag_')) {
+                    const messageCommand = interaction.client.commands.get('message');
+                    if (messageCommand && messageCommand.handleForumTagSelect) {
+                        try {
+                            await messageCommand.handleForumTagSelect(interaction);
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                    return;
+                }
 
                 if (customId === "revoke_select_categories") {
                     if (!interaction.member.permissions.has(0x10000000n)) {

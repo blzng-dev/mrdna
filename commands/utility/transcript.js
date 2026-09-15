@@ -23,11 +23,18 @@ module.exports = {
                 .setName("ephemeral")
                 .setDescription("Whether the msg is ephemeral")
         )
+        .addBooleanOption((option) =>
+            option
+                .setName("include_bots")
+                .setDescription("Whether to include bot messages in the transcript")
+        )
         .setDMPermission(false),
 
     async execute(interaction) {
         const isEphemeral =
             interaction.options.getBoolean("ephemeral") || false;
+        const includeBots =
+            interaction.options.getBoolean("include_bots") || false;
         await interaction.deferReply({
             flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
         });
@@ -51,7 +58,7 @@ module.exports = {
 
                 messages.forEach((msg) => {
                     if (
-                        !msg.author.bot &&
+                        (!msg.author.bot || includeBots) &&
                         allMessages.length < requestedCount
                     ) {
                         allMessages.push(msg);
@@ -64,7 +71,7 @@ module.exports = {
 
             if (allMessages.length === 0) {
                 return interaction.editReply({
-                    content: "No user messages found to transcribe.",
+                    content: "No messages found to transcribe.",
                 });
             }
 

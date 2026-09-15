@@ -10,56 +10,7 @@ const {
     Routes
 } = require('discord.js');
 
-function collectAllMediaItems(components) {
-    if (!components) return [];
-    let list = [];
-    for (const comp of components) {
-        if (comp.type === 12 && comp.items) {
-            list.push(...comp.items);
-        } else if (comp.type === 17 && comp.components) {
-            list.push(...collectAllMediaItems(comp.components));
-        }
-    }
-    return list;
-}
-
-function removeMediaFromComponents(components, selectedIndices) {
-    let globalIndex = 0;
-    const selectedSet = new Set(selectedIndices);
-
-    function processItems(items) {
-        const remaining = [];
-        for (const item of items) {
-            globalIndex++;
-            if (!selectedSet.has(globalIndex)) {
-                remaining.push(item);
-            }
-        }
-        return remaining;
-    }
-
-    function traverse(comps) {
-        const result = [];
-        for (const comp of comps) {
-            if (comp.type === 12 && comp.items) {
-                const filtered = processItems(comp.items);
-                if (filtered.length > 0) {
-                    result.push({ ...comp, items: filtered });
-                }
-            } else if (comp.type === 17 && comp.components) {
-                const inner = traverse(comp.components);
-                if (inner.length > 0) {
-                    result.push({ ...comp, components: inner });
-                }
-            } else {
-                result.push(comp);
-            }
-        }
-        return result;
-    }
-
-    return traverse(components);
-}
+const { collectAllMediaItems, removeMediaFromComponents } = require('../../utils/messageParser');
 
 module.exports = {
     data: new ContextMenuCommandBuilder()

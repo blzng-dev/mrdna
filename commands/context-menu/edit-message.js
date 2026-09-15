@@ -16,231 +16,8 @@ const {
     ChannelType
 } = require('discord.js');
 const { resolveEmojisInText } = require('../../utils/emojiResolver');
-
-function parseTextAndSeparators(rawText, allMediaItems, usedIndices) {
-    const lines = rawText.split(/\r?\n/);
-    const components = [];
-    let currentTextLines = [];
-
-    function flushText() {
-        const text = currentTextLines.join('\n').trim();
-        if (text.length > 0) {
-            components.push({
-                type: 10,
-                content: text
-            });
-        }
-        currentTextLines = [];
-    }
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        const sepMatch = trimmed.match(/^(\d+)?---(true|false)?$/);
-        const mediaMatch = trimmed.match(/^-media(?:\[([\d\s,]+)\])?$/);
-
-        if (sepMatch) {
-            flushText();
-            const sizeStr = sepMatch[1];
-            const divStr = sepMatch[2];
-            const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
-            const divider = divStr === 'false' ? false : true;
-            components.push({
-                type: 14,
-                divider: divider,
-                spacing: spacing
-            });
-        } else if (mediaMatch) {
-            flushText();
-            if (allMediaItems && allMediaItems.length > 0) {
-                let galleryItems = [];
-                if (mediaMatch[1]) {
-                    const indices = mediaMatch[1].split(',').map(n => parseInt(n.trim(), 10) - 1).filter(n => !isNaN(n));
-                    for (const idx of indices) {
-                        if (allMediaItems[idx] && !usedIndices.has(idx)) {
-                            galleryItems.push(allMediaItems[idx]);
-                            usedIndices.add(idx);
-                        }
-                    }
-                } else {
-                    for (let i = 0; i < allMediaItems.length; i++) {
-                        if (!usedIndices.has(i)) {
-                            galleryItems.push(allMediaItems[i]);
-                            usedIndices.add(i);
-                        }
-                    }
-                }
-                if (galleryItems.length > 0) {
-                    components.push({
-                        type: 12,
-                        items: galleryItems.slice(0, 10)
-                    });
-                }
-            }
-        } else {
-            currentTextLines.push(line);
-        }
-    }
-    flushText();
-    return components;
-}
-
-function parseComponents(rawText, allMediaItems) {
-    const usedIndices = new Set();
-    const components = [];
-    const lines = rawText.split(/\r?\n/);
-
-    let insideContainer = false;
-    let containerHeader = '';
-    let containerLines = [];
-    let outsideLines = [];
-
-    function flushOutside() {
-        if (outsideLines.length > 0) {
-            const text = outsideLines.join('\n');
-            if (text.trim().length > 0) {
-                components.push(...parseTextAndSeparators(text, allMediaItems, usedIndices));
-            }
-            outsideLines = [];
-        }
-    }
-
-    function flushContainer() {
-        if (containerLines.length > 0) {
-            const text = containerLines.join('\n');
-            const innerComponents = parseTextAndSeparators(text, allMediaItems, usedIndices);
-            if (innerComponents.length > 0) {
-                const container = {
-                    type: 17,
-                    components: innerComponents
-                };
-                if (containerHeader) {
-                    const hexMatch = containerHeader.match(/#?([0-9a-fA-F]{6})/);
-                    if (hexMatch) {
-                        container.accent_color = parseInt(hexMatch[1], 16);
-                    }
-                    if (/\bspoiler\b/i.test(containerHeader)) {
-                        container.spoiler = true;
-                    }
-                }
-                components.push(container);
-            }
-            containerLines = [];
-            containerHeader = '';
-        }
-    }
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!insideContainer && trimmed.startsWith('c---')) {
-            flushOutside();
-            insideContainer = true;
-            containerHeader = trimmed.slice(4).trim();
-            containerLines = [];
-        } else if (insideContainer && (trimmed === '/c---' || trimmed === 'c---')) {
-            flushContainer();
-            insideContainer = false;
-        } else if (insideContainer) {
-            containerLines.push(line);
-        } else {
-            outsideLines.push(line);
-        }
-    }
-
-    if (insideContainer) {
-        flushContainer();
-    } else {
-        flushOutside();
-    }
-
-    if (allMediaItems && allMediaItems.length > 0) {
-        const remainingItems = [];
-        for (let i = 0; i < allMediaItems.length; i++) {
-            if (!usedIndices.has(i)) {
-                remainingItems.push(allMediaItems[i]);
-                usedIndices.add(i);
-            }
-        }
-        if (remainingItems.length > 0) {
-            components.push({
-                type: 12,
-                items: remainingItems.slice(0, 10)
-            });
-        }
-    }
-
-    return components;
-}
-
-function reconstructText(components) {
-    let globalImageCounter = 0;
-
-    function formatTextAndSeparators(comps) {
-        let res = '';
-        for (const comp of comps) {
-            if (comp.type === 10) {
-                res += (res.length > 0 && !res.endsWith('\n') ? '\n' : '') + comp.content;
-            } else if (comp.type === 14) {
-                const spacing = comp.spacing !== undefined ? comp.spacing : 1;
-                const divider = comp.divider !== undefined ? comp.divider : true;
-                const spacingStr = spacing !== 1 ? spacing.toString() : '';
-                const divStrFinal = divider === false ? 'false' : '';
-                res += '\n' + spacingStr + '---' + divStrFinal + '\n';
-            } else if (comp.type === 12 && comp.items) {
-                const indices = [];
-                for (let i = 0; i < comp.items.length; i++) {
-                    globalImageCounter++;
-                    indices.push(globalImageCounter);
-                }
-                res += (res.length > 0 && !res.endsWith('\n') ? '\n' : '') + `-media[${indices.join(', ')}]\n`;
-            }
-        }
-        return res;
-    }
-
-    let text = '';
-    for (const comp of components) {
-        if (comp.type === 10) {
-            text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + comp.content;
-        } else if (comp.type === 14) {
-            const spacing = comp.spacing !== undefined ? comp.spacing : 1;
-            const divider = comp.divider !== undefined ? comp.divider : true;
-            const spacingStr = spacing !== 1 ? spacing.toString() : '';
-            const divStrFinal = divider === false ? 'false' : '';
-            text += '\n' + spacingStr + '---' + divStrFinal + '\n';
-        } else if (comp.type === 12 && comp.items) {
-            const indices = [];
-            for (let i = 0; i < comp.items.length; i++) {
-                globalImageCounter++;
-                indices.push(globalImageCounter);
-            }
-            text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + `-media[${indices.join(', ')}]\n`;
-        } else if (comp.type === 17 && comp.components) {
-            let header = 'c---';
-            if (comp.accent_color !== undefined && comp.accent_color !== null) {
-                header += '#' + comp.accent_color.toString(16).padStart(6, '0').toUpperCase();
-            }
-            if (comp.spoiler) {
-                header += (header.length > 4 ? ' ' : '') + 'spoiler';
-            }
-            const innerText = formatTextAndSeparators(comp.components);
-            text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + header + '\n' + innerText.trim() + '\n/c---\n';
-        }
-    }
-    return text.trim();
-}
-
-function collectAllMediaItems(components) {
-    if (!components) return [];
-    let list = [];
-    for (const comp of components) {
-        if (comp.type === 12 && comp.items) {
-            list.push(...comp.items);
-        } else if (comp.type === 17 && comp.components) {
-            list.push(...collectAllMediaItems(comp.components));
-        }
-    }
-    return list;
-}
+const { reconstructText, parseComponents, collectAllMediaItems } = require('../../utils/messageParser');
+const { createForumDraft } = require('../../utils/forumHandler');
 
 module.exports = {
     data: new ContextMenuCommandBuilder()
@@ -293,7 +70,17 @@ module.exports = {
             .setCustomId('message_channel')
             .setPlaceholder('Select a channel (defaults to current)')
             .setRequired(false)
-            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+            .addChannelTypes(
+                ChannelType.GuildText,
+                ChannelType.GuildAnnouncement,
+                ChannelType.GuildForum,
+                ChannelType.GuildMedia,
+                ChannelType.PublicThread,
+                ChannelType.PrivateThread,
+                ChannelType.AnnouncementThread,
+                ChannelType.GuildVoice,
+                ChannelType.GuildStageVoice
+            );
 
         const channelLabel = new LabelBuilder()
             .setLabel('Target Channel')
@@ -386,8 +173,10 @@ module.exports = {
         }
 
         try {
-            const channel = await interaction.client.channels.fetch(interaction.channelId);
-            const targetMessage = await channel.messages.fetch(messageId);
+            const targetChannel = await interaction.client.channels.fetch(targetChannelId);
+            if (!targetChannel) {
+                throw new Error('Target channel not found.');
+            }
 
             const rawMessage = await interaction.client.rest.get(
                 Routes.channelMessage(interaction.channelId, messageId)
@@ -412,9 +201,33 @@ module.exports = {
 
             const allowedMentionsPayload = mentions ? { parse: ['users', 'roles', 'everyone'] } : { parse: [] };
 
+            // Check if moving to a Forum or Media channel
+            if (targetChannel.type === ChannelType.GuildForum || targetChannel.type === ChannelType.GuildMedia) {
+                const draftId = `${interaction.id}_${Date.now()}`;
+
+                let defaultTitle = '';
+                const firstLine = rawText.split('\n').map(l => l.trim()).find(l => l.length > 0 && !l.startsWith('c---') && !l.startsWith('-media') && !l.startsWith('---'));
+                if (firstLine) {
+                    defaultTitle = firstLine.replace(/^[#\s]+/, '').substring(0, 80);
+                }
+
+                const setupPayload = createForumDraft({
+                    id: draftId,
+                    userId: interaction.user.id,
+                    targetChannel,
+                    components: [...components, ...existingOtherComponents],
+                    files: filesToSend,
+                    allowedMentions: allowedMentionsPayload,
+                    defaultTitle,
+                    oldMessageId: messageId,
+                    oldChannelId: interaction.channelId
+                });
+
+                return interaction.editReply(setupPayload);
+            }
+
             if (targetChannelId !== interaction.channelId) {
                 // Post edited message in the new channel
-                const targetChannel = await interaction.client.channels.fetch(targetChannelId);
                 const sendOptions = {
                     components: [...components, ...existingOtherComponents],
                     flags: MessageFlags.IsComponentsV2 || (1 << 15),
@@ -427,7 +240,9 @@ module.exports = {
 
                 // Delete old message from the original channel
                 try {
-                    await targetMessage.delete();
+                    const originChannel = await interaction.client.channels.fetch(interaction.channelId);
+                    const originMessage = await originChannel.messages.fetch(messageId);
+                    await originMessage.delete();
                 } catch (delErr) {
                     console.warn('Failed to delete old message during move:', delErr);
                 }
@@ -437,6 +252,8 @@ module.exports = {
                 });
             } else {
                 // Edit in-place
+                const originChannel = await interaction.client.channels.fetch(interaction.channelId);
+                const targetMessage = await originChannel.messages.fetch(messageId);
                 const editOptions = {
                     content: '',
                     components: [...components, ...existingOtherComponents],

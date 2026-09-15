@@ -13,6 +13,13 @@ const {
     ChannelType
 } = require('discord.js');
 const { resolveEmojisInText } = require('../../utils/emojiResolver');
+const { parseComponents } = require('../../utils/messageParser');
+const {
+    createForumDraft,
+    handleForumButton,
+    handleForumTagSelect,
+    handleForumTitleModal
+} = require('../../utils/forumHandler');
 
 const STRINGS = {
     command: {
@@ -30,161 +37,6 @@ const STRINGS = {
         no_content: 'No content was provided.'
     }
 };
-
-function parseTextAndSeparators(rawText, allMediaItems, usedIndices) {
-    const lines = rawText.split(/\r?\n/);
-    const components = [];
-    let currentTextLines = [];
-
-    function flushText() {
-        const text = currentTextLines.join('\n').trim();
-        if (text.length > 0) {
-            components.push({
-                type: 10,
-                content: text
-            });
-        }
-        currentTextLines = [];
-    }
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        const sepMatch = trimmed.match(/^(\d+)?---(true|false)?$/);
-        const mediaMatch = trimmed.match(/^-media(?:\[([\d\s,]+)\])?$/);
-
-        if (sepMatch) {
-            flushText();
-            const sizeStr = sepMatch[1];
-            const divStr = sepMatch[2];
-            const spacing = sizeStr ? parseInt(sizeStr, 10) : 1;
-            const divider = divStr === 'false' ? false : true;
-            components.push({
-                type: 14,
-                divider: divider,
-                spacing: spacing
-            });
-        } else if (mediaMatch) {
-            flushText();
-            if (allMediaItems && allMediaItems.length > 0) {
-                let galleryItems = [];
-                if (mediaMatch[1]) {
-                    const indices = mediaMatch[1].split(',').map(n => parseInt(n.trim(), 10) - 1).filter(n => !isNaN(n));
-                    for (const idx of indices) {
-                        if (allMediaItems[idx] && !usedIndices.has(idx)) {
-                            galleryItems.push(allMediaItems[idx]);
-                            usedIndices.add(idx);
-                        }
-                    }
-                } else {
-                    for (let i = 0; i < allMediaItems.length; i++) {
-                        if (!usedIndices.has(i)) {
-                            galleryItems.push(allMediaItems[i]);
-                            usedIndices.add(i);
-                        }
-                    }
-                }
-                if (galleryItems.length > 0) {
-                    components.push({
-                        type: 12,
-                        items: galleryItems.slice(0, 10)
-                    });
-                }
-            }
-        } else {
-            currentTextLines.push(line);
-        }
-    }
-    flushText();
-    return components;
-}
-
-function parseComponents(rawText, allMediaItems) {
-    const usedIndices = new Set();
-    const components = [];
-    const lines = rawText.split(/\r?\n/);
-
-    let insideContainer = false;
-    let containerHeader = '';
-    let containerLines = [];
-    let outsideLines = [];
-
-    function flushOutside() {
-        if (outsideLines.length > 0) {
-            const text = outsideLines.join('\n');
-            if (text.trim().length > 0) {
-                components.push(...parseTextAndSeparators(text, allMediaItems, usedIndices));
-            }
-            outsideLines = [];
-        }
-    }
-
-    function flushContainer() {
-        if (containerLines.length > 0) {
-            const text = containerLines.join('\n');
-            const innerComponents = parseTextAndSeparators(text, allMediaItems, usedIndices);
-            if (innerComponents.length > 0) {
-                const container = {
-                    type: 17,
-                    components: innerComponents
-                };
-                if (containerHeader) {
-                    const hexMatch = containerHeader.match(/#?([0-9a-fA-F]{6})/);
-                    if (hexMatch) {
-                        container.accent_color = parseInt(hexMatch[1], 16);
-                    }
-                    if (/\bspoiler\b/i.test(containerHeader)) {
-                        container.spoiler = true;
-                    }
-                }
-                components.push(container);
-            }
-            containerLines = [];
-            containerHeader = '';
-        }
-    }
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!insideContainer && trimmed.startsWith('c---')) {
-            flushOutside();
-            insideContainer = true;
-            containerHeader = trimmed.slice(4).trim();
-            containerLines = [];
-        } else if (insideContainer && (trimmed === '/c---' || trimmed === 'c---')) {
-            flushContainer();
-            insideContainer = false;
-        } else if (insideContainer) {
-            containerLines.push(line);
-        } else {
-            outsideLines.push(line);
-        }
-    }
-
-    if (insideContainer) {
-        flushContainer();
-    } else {
-        flushOutside();
-    }
-
-    // If there are any unused media items left, bundle them in a gallery at the bottom
-    if (allMediaItems && allMediaItems.length > 0) {
-        const remainingItems = [];
-        for (let i = 0; i < allMediaItems.length; i++) {
-            if (!usedIndices.has(i)) {
-                remainingItems.push(allMediaItems[i]);
-                usedIndices.add(i);
-            }
-        }
-        if (remainingItems.length > 0) {
-            components.push({
-                type: 12,
-                items: remainingItems.slice(0, 10)
-            });
-        }
-    }
-
-    return components;
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -205,7 +57,17 @@ module.exports = {
             .setCustomId('message_channel')
             .setPlaceholder('Select a channel (defaults to current)')
             .setRequired(false)
-            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+            .addChannelTypes(
+                ChannelType.GuildText,
+                ChannelType.GuildAnnouncement,
+                ChannelType.GuildForum,
+                ChannelType.GuildMedia,
+                ChannelType.PublicThread,
+                ChannelType.PrivateThread,
+                ChannelType.AnnouncementThread,
+                ChannelType.GuildVoice,
+                ChannelType.GuildStageVoice
+            );
         
         const channelLabel = new LabelBuilder()
             .setLabel(STRINGS.modal.channel_label)
@@ -289,7 +151,6 @@ module.exports = {
             filename = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
             if (att.url) {
                 filesToSend.push(new AttachmentBuilder(att.url, { name: filename }));
-                // No alt text (description) as requested
                 allMediaItems.push({
                     media: { url: `attachment://${filename}` }
                 });
@@ -306,8 +167,36 @@ module.exports = {
 
         try {
             const targetChannel = await interaction.client.channels.fetch(channelId);
-            if (!targetChannel || !targetChannel.send) {
-                throw new Error('Target channel not found or cannot send messages.');
+            if (!targetChannel) {
+                throw new Error('Target channel not found.');
+            }
+
+            // Check if selected channel is a Forum or Media channel
+            if (targetChannel.type === ChannelType.GuildForum || targetChannel.type === ChannelType.GuildMedia) {
+                const draftId = `${interaction.id}_${Date.now()}`;
+                
+                let defaultTitle = '';
+                const firstLine = rawText.split('\n').map(l => l.trim()).find(l => l.length > 0 && !l.startsWith('c---') && !l.startsWith('-media') && !l.startsWith('---'));
+                if (firstLine) {
+                    defaultTitle = firstLine.replace(/^[#\s]+/, '').substring(0, 80);
+                }
+
+                const setupPayload = createForumDraft({
+                    id: draftId,
+                    userId: interaction.user.id,
+                    targetChannel,
+                    components,
+                    files: filesToSend,
+                    allowedMentions: mentions ? { parse: ['users', 'roles', 'everyone'] } : { parse: [] },
+                    defaultTitle
+                });
+
+                return interaction.editReply(setupPayload);
+            }
+
+            // Regular channel / thread / voice chat send
+            if (!targetChannel.send) {
+                throw new Error('Cannot send messages to this channel type.');
             }
 
             const sendOptions = {
@@ -322,13 +211,17 @@ module.exports = {
             await targetChannel.send(sendOptions);
 
             await interaction.editReply({
-                content: 'Message sent successfully!'
+                content: 'Message sent successfully.'
             });
         } catch (error) {
             console.error(error);
             await interaction.editReply({
-                content: 'Failed to send message. Make sure I have permissions in that channel.'
+                content: `Failed to send message: ${error.message}`
             });
         }
-    }
+    },
+
+    handleForumButton,
+    handleForumTagSelect,
+    handleForumTitleModal
 };

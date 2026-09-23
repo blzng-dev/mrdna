@@ -6,24 +6,53 @@ const GLOBAL_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 const channelCooldowns = new Map();
 
+const STRINGS = {
+    command: {
+        name: "stream",
+        description: "Pings the stream role",
+        optionContentDescription: "What are you streaming?",
+        optionChannelDescription: "Where are you streaming?",
+        channelChoices: {
+            general: "General",
+            music: "Music",
+            stream: "Stream",
+        },
+    },
+    errors: {
+        noMentions: "Please send the command again without any mentions.",
+        noLinks: "Links are not allowed in the stream command.",
+        generic: "There was an error sending the message.",
+    },
+    cooldown: {
+        active: (timeLeft) => `Command is on cooldown. Available <t:${timeLeft}:R>`,
+    },
+    buttons: {
+        toggleRole: "Toggle Stream Notifications",
+    },
+    messages: {
+        streamPing: (roleId, userId, contents, channelSuffix) => `<@&${roleId}>, <@${userId}> is streaming **${contents}**${channelSuffix}`,
+        logBlockedLink: (userId, channelStr, contents) => `**Stream Blocked (Link)**\n**User:** <@${userId}> (${userId})\n**Channel:** ${channelStr}\n**Content:** ${contents}`,
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("stream")
-        .setDescription("Pings the stream role")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addStringOption((option) =>
             option
                 .setName("content")
-                .setDescription("What are you streaming?")
+                .setDescription(STRINGS.command.optionContentDescription)
                 .setRequired(true)
         )
         .addStringOption((option) =>
             option
                 .setName("channel")
-                .setDescription("Where are you streaming?")
+                .setDescription(STRINGS.command.optionChannelDescription)
                 .addChoices(
-                    { name: "General", value: "843830483141525564" },
-                    { name: "Music", value: "843830571158339644" },
-                    { name: "Stream", value: "843831162732544030" }
+                    { name: STRINGS.command.channelChoices.general, value: "843830483141525564" },
+                    { name: STRINGS.command.channelChoices.music, value: "843830571158339644" },
+                    { name: STRINGS.command.channelChoices.stream, value: "843831162732544030" }
                 )
         ),
 
@@ -39,7 +68,7 @@ module.exports = {
             const pingPatterns = [/@everyone/, /@here/, /<@&?\d+>/];
             if (pingPatterns.some((p) => p.test(contents))) {
                 return interaction.reply({
-                    content: "Please send the command again without any mentions.",
+                    content: STRINGS.errors.noMentions,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -49,11 +78,11 @@ module.exports = {
             if (linkRegex.test(contents)) {
                 const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
                 if (logChannel) {
-                    const logMsg = `**Stream Blocked (Link)**\n**User:** <@${user.id}> (${user.id})\n**Channel:** ${channel.toString()}\n**Content:** ${contents}`;
+                    const logMsg = STRINGS.messages.logBlockedLink(user.id, channel.toString(), contents);
                     await logChannel.send({ content: logMsg });
                 }
                 return interaction.reply({
-                    content: "Links are not allowed in the stream command.",
+                    content: STRINGS.errors.noLinks,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -64,7 +93,7 @@ module.exports = {
             if (now < unlockTime) {
                 const timeLeft = Math.floor(unlockTime / 1000);
                 return interaction.reply({
-                    content: `Command is on cooldown. Available <t:${timeLeft}:R>`,
+                    content: STRINGS.cooldown.active(timeLeft),
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -74,20 +103,20 @@ module.exports = {
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId("toggle_stream_role")
-                    .setLabel("Toggle Stream Notifications")
+                    .setLabel(STRINGS.buttons.toggleRole)
                     .setStyle(ButtonStyle.Primary)
             );
 
             // 5. Send Stream Ping
             await interaction.reply({
-                content: `<@&${STREAM_ROLE_ID}>, <@${user.id}> is streaming **${contents}**${channelSuffix}`,
+                content: STRINGS.messages.streamPing(STREAM_ROLE_ID, user.id, contents, channelSuffix),
                 components: [row],
                 allowedMentions: { roles: [STREAM_ROLE_ID], users: [user.id] },
             });
         } catch (error) {
             console.error("Error in stream command:", error);
             await interaction.reply({
-                content: "There was an error sending the message.",
+                content: STRINGS.errors.generic,
                 flags: MessageFlags.Ephemeral,
             });
         }

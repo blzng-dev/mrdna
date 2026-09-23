@@ -9,17 +9,35 @@ const {
 } = require("discord.js");
 const menuData = require("../../data/menu-data.json");
 
+const STRINGS = {
+    command: {
+        name: "menu",
+        description: "Display the welcome menu with server information",
+        optionMessageIdDescription: "ID of an existing message to update (optional)",
+    },
+    selectMenu: {
+        defaultPlaceholder: "Select an option",
+    },
+    status: {
+        updated: "Menu updated!",
+        sent: "Menu sent!",
+    },
+    errors: {
+        notFound: "Welcome message configuration not found.",
+        editFailed: "Failed to edit message. Check ID and permissions.",
+        generic: (msg) => `Error: ${msg}`,
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("menu")
-        .setDescription("Display the welcome menu with server information")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addStringOption((option) =>
             option
                 .setName("messageid")
-                .setDescription(
-                    "ID of an existing message to update (optional)"
-                )
+                .setDescription(STRINGS.command.optionMessageIdDescription)
                 .setRequired(false)
         ),
 
@@ -30,7 +48,7 @@ module.exports = {
             );
             if (!welcomeMsg) {
                 return interaction.reply({
-                    content: "Welcome message configuration not found.",
+                    content: STRINGS.errors.notFound,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -50,7 +68,7 @@ module.exports = {
                         const selectMenu = new StringSelectMenuBuilder()
                             .setCustomId(comp.custom_id)
                             .setPlaceholder(
-                                comp.placeholder || "Select an option"
+                                comp.placeholder || STRINGS.selectMenu.defaultPlaceholder
                             );
 
                         comp.options.forEach((opt) => {
@@ -103,13 +121,12 @@ module.exports = {
                         components,
                     });
                     await interaction.reply({
-                        content: "Menu updated!",
+                        content: STRINGS.status.updated,
                         flags: MessageFlags.Ephemeral,
                     });
                 } catch (e) {
                     return interaction.reply({
-                        content:
-                            "Failed to edit message. Check ID and permissions.",
+                        content: STRINGS.errors.editFailed,
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -119,7 +136,7 @@ module.exports = {
                     components: components,
                 });
                 await interaction.reply({
-                    content: "Menu sent!",
+                    content: STRINGS.status.sent,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -127,7 +144,7 @@ module.exports = {
             console.error("Error in menu command:", error);
             if (!interaction.replied)
                 await interaction.reply({
-                    content: `Error: ${error.message}`,
+                    content: STRINGS.errors.generic(error.message),
                     flags: MessageFlags.Ephemeral,
                 });
         }

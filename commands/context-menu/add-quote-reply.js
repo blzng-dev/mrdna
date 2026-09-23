@@ -4,6 +4,21 @@ const db = require("../../db.js");
 const STAFF_ROLE_ID = "857990235194261514";
 const LOG_CHANNEL_ID = "1461971930880938129";
 
+const STRINGS = {
+    command: {
+        name: "Add Quote with Reply",
+    },
+    errors: {
+        permissionDenied: ":x_: Permission Denied.",
+        alreadyExists: ":warning: Quote already exists.",
+        error: (msg) => `An error occurred: ${msg}`,
+    },
+    messages: {
+        added: (content) => `:checkmark: Quote added!\n> ${content}`,
+        logHeader: "Quote added",
+    },
+};
+
 function normalizeLink(link) {
     return link.replace(
         /https?:\/\/(canary\.|ptb\.)?discord\.com/,
@@ -28,7 +43,7 @@ async function sendLog(interaction, header, contentCodeBlock) {
 
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName("Add Quote with Reply")
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -40,7 +55,7 @@ module.exports = {
 
         if (!isAdmin && !isStaff) {
             return interaction.reply({
-                content: "❌ Permission Denied.",
+                content: STRINGS.errors.permissionDenied,
                 ephemeral: true,
             });
         }
@@ -66,32 +81,32 @@ module.exports = {
 
         try {
             const check = await db.query(
-                "SELECT * FROM quotes WHERE link = $1",
+                "SELECT * FROM fun.quotes WHERE link = $1",
                 [link]
             );
             if (check.rows.length > 0) {
-                return interaction.editReply("⚠️ Quote already exists.");
+                return interaction.editReply(STRINGS.errors.alreadyExists);
             }
 
             const res = await db.query(
-                "INSERT INTO quotes (text, link, reply) VALUES ($1, $2, $3) RETURNING *",
+                "INSERT INTO fun.quotes (text, link, reply) VALUES ($1, $2, $3) RETURNING *",
                 [quoteMsg.content, link, replyText]
             );
 
             const jsonLog = JSON.stringify(res.rows[0], null, 2);
             await sendLog(
                 interaction,
-                "Quote added",
+                STRINGS.messages.logHeader,
                 `\`\`\`json\n${jsonLog}\n\`\`\``
             );
 
             return interaction.editReply(
-                `✅ Quote added!\n> ${quoteMsg.content}`
+                STRINGS.messages.added(quoteMsg.content)
             );
         } catch (error) {
             console.error(error);
             return interaction.editReply({
-                content: `An error occurred: ${error.message}`,
+                content: STRINGS.errors.error(error.message),
             });
         }
     },

@@ -12,16 +12,39 @@ const {
 
 const { collectAllMediaItems, removeMediaFromComponents } = require('../../utils/messageParser');
 
+const STRINGS = {
+    command: {
+        name: 'Remove Media',
+    },
+    modals: {
+        title: 'Remove Media',
+        label: 'Images to Remove',
+        placeholder: 'Select image index(es) to remove',
+        optionLabel: (index) => `Image ${index}`,
+        optionDesc: (index) => `Remove Image #${index}`,
+    },
+    errors: {
+        notOwnMessage: 'I can only manage media on my own messages.',
+        noMedia: 'This message does not contain any images or media gallery items to remove.',
+        noSelection: 'No image index was selected.',
+        failedToRemove: 'Failed to remove media from the message.',
+    },
+    messages: {
+        removedSuccess: (count, indicesStr) =>
+            `Successfully removed ${count} image(s) (Image #${indicesStr}) from the message!`,
+    },
+};
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Remove Media')
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
     async execute(interaction) {
         if (interaction.targetMessage.author.id !== interaction.client.user.id) {
             return interaction.reply({
-                content: 'I can only manage media on my own messages.',
+                content: STRINGS.errors.notOwnMessage,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -33,7 +56,7 @@ module.exports = {
         const existingMedia = collectAllMediaItems(rawMessage.components);
         if (existingMedia.length === 0) {
             return interaction.reply({
-                content: 'This message does not contain any images or media gallery items to remove.',
+                content: STRINGS.errors.noMedia,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -43,26 +66,26 @@ module.exports = {
             const index = i + 1;
             selectOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`Image ${index}`)
+                    .setLabel(STRINGS.modals.optionLabel(index))
                     .setValue(`${index}`)
-                    .setDescription(`Remove Image #${index}`)
+                    .setDescription(STRINGS.modals.optionDesc(index))
             );
         }
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('remove_media_indices')
-            .setPlaceholder('Select image index(es) to remove')
+            .setPlaceholder(STRINGS.modals.placeholder)
             .setMinValues(1)
             .setMaxValues(existingMedia.length)
             .addOptions(selectOptions);
 
         const selectLabel = new LabelBuilder()
-            .setLabel('Images to Remove')
+            .setLabel(STRINGS.modals.label)
             .setStringSelectMenuComponent(selectMenu);
 
         const modal = new ModalBuilder()
             .setCustomId(`remove_media_modal_${interaction.targetId}`)
-            .setTitle('Remove Media')
+            .setTitle(STRINGS.modals.title)
             .addComponents(selectLabel);
 
         await interaction.showModal(modal);
@@ -78,7 +101,7 @@ module.exports = {
 
         if (selectedIndices.length === 0) {
             return interaction.editReply({
-                content: 'No image index was selected.'
+                content: STRINGS.errors.noSelection
             });
         }
 
@@ -101,12 +124,12 @@ module.exports = {
             });
 
             await interaction.editReply({
-                content: `Successfully removed ${selectedIndices.length} image(s) (Image #${selectedIndices.join(', #')}) from the message!`
+                content: STRINGS.messages.removedSuccess(selectedIndices.length, selectedIndices.join(', #'))
             });
         } catch (error) {
             console.error(error);
             await interaction.editReply({
-                content: 'Failed to remove media from the message.'
+                content: STRINGS.errors.failedToRemove
             });
         }
     }

@@ -6,46 +6,80 @@ const {
     ButtonStyle,
     MessageFlags,
 } = require("discord.js");
+const { findEmojiByNameOrId } = require("../../utils/emojiResolver");
+
+const STRINGS = {
+    command: {
+        name: "transcript",
+        description: "Fetches messages and saves them to a text file",
+        options: {
+            count: {
+                name: "count",
+                description: "Number of messages (default: 250)",
+            },
+            ephemeral: {
+                name: "ephemeral",
+                description: "Whether the msg is ephemeral",
+            },
+            include_bots: {
+                name: "include_bots",
+                description: "Whether to include bot messages in the transcript",
+            },
+        },
+    },
+    status: {
+        fetching: (count) => `Fetching the last ${count} messages...`,
+        noMessages: "No messages found to transcribe.",
+        transcriptSummary: (channelName, channelId, participantsText) =>
+            `Transcript generated for "${channelName}" (${channelId})\nParticipants: ${participantsText}`,
+    },
+    buttons: {
+        sendToLogs: "Send to Logs",
+    },
+    errors: {
+        generateError: "Error generating transcript.",
+    },
+};
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("transcript")
-        .setDescription("Fetches messages and saves them to a text file")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addIntegerOption((option) =>
             option
-                .setName("count")
-                .setDescription("Number of messages (default: 250)")
+                .setName(STRINGS.command.options.count.name)
+                .setDescription(STRINGS.command.options.count.description)
                 .setMinValue(1)
                 .setMaxValue(1000)
         )
         .addBooleanOption((option) =>
             option
-                .setName("ephemeral")
-                .setDescription("Whether the msg is ephemeral")
+                .setName(STRINGS.command.options.ephemeral.name)
+                .setDescription(STRINGS.command.options.ephemeral.description)
         )
         .addBooleanOption((option) =>
             option
-                .setName("include_bots")
-                .setDescription("Whether to include bot messages in the transcript")
+                .setName(STRINGS.command.options.include_bots.name)
+                .setDescription(STRINGS.command.options.include_bots.description)
         )
         .setDMPermission(false),
 
     async execute(interaction) {
         const isEphemeral =
-            interaction.options.getBoolean("ephemeral") || false;
+            interaction.options.getBoolean(STRINGS.command.options.ephemeral.name) || false;
         const includeBots =
-            interaction.options.getBoolean("include_bots") || false;
+            interaction.options.getBoolean(STRINGS.command.options.include_bots.name) || false;
         await interaction.deferReply({
             flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
         });
 
         try {
-            let requestedCount = interaction.options.getInteger("count") || 250;
+            let requestedCount = interaction.options.getInteger(STRINGS.command.options.count.name) || 250;
             if (requestedCount > 1000) requestedCount = 1000;
 
             const channel = interaction.channel;
             await interaction.editReply({
-                content: `Fetching the last ${requestedCount} messages...`,
+                content: STRINGS.status.fetching(requestedCount),
             });
 
             let allMessages = [];
@@ -71,7 +105,7 @@ module.exports = {
 
             if (allMessages.length === 0) {
                 return interaction.editReply({
-                    content: "No messages found to transcribe.",
+                    content: STRINGS.status.noMessages,
                 });
             }
 
@@ -178,15 +212,21 @@ module.exports = {
             });
             let participantsText = participantsArray.length > 0 ? participantsArray.join(", ") : "None";
 
-            let finalContent = `Transcript generated for "${interaction.channel.name}" (${interaction.channel.id})\nParticipants: ${participantsText}`;
+            let finalContent = STRINGS.status.transcriptSummary(interaction.channel.name, interaction.channel.id, participantsText);
 
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId("send_to_logs")
-                    .setLabel("Send to Logs")
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji("📂")
-            );
+            const categoryEmoji = await findEmojiByNameOrId(interaction.client, ":category:");
+            const sendButton = new ButtonBuilder()
+                .setCustomId("send_to_logs")
+                .setLabel(STRINGS.buttons.sendToLogs)
+                .setStyle(ButtonStyle.Secondary);
+
+            if (categoryEmoji?.id) {
+                sendButton.setEmoji(categoryEmoji);
+            } else {
+                sendButton.setEmoji(":category:");
+            }
+
+            const row = new ActionRowBuilder().addComponents(sendButton);
 
             // Send Reply (NO COLLECTOR)
             await interaction.editReply({
@@ -197,7 +237,7 @@ module.exports = {
         } catch (error) {
             console.error("Error creating transcript:", error);
             await interaction.editReply({
-                content: "Error generating transcript.",
+                content: STRINGS.errors.generateError,
             });
         }
     },

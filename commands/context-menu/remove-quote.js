@@ -4,6 +4,21 @@ const db = require("../../db.js");
 const STAFF_ROLE_ID = "857990235194261514";
 const LOG_CHANNEL_ID = "1461971930880938129";
 
+const STRINGS = {
+    command: {
+        name: "Remove Quote",
+    },
+    errors: {
+        permissionDenied: ":x_: Permission Denied.",
+        notFound: ":warning: Quote not found.",
+        error: (msg) => `An error occurred: ${msg}`,
+    },
+    messages: {
+        removed: ":checkmark: Quote removed.",
+        logHeader: "Quote deleted",
+    },
+};
+
 function normalizeLink(link) {
     return link.replace(
         /https?:\/\/(canary\.|ptb\.)?discord\.com/,
@@ -28,7 +43,7 @@ async function sendLog(interaction, header, contentCodeBlock) {
 
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName("Remove Quote")
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -40,7 +55,7 @@ module.exports = {
 
         if (!isAdmin && !isStaff) {
             return interaction.reply({
-                content: "❌ Permission Denied.",
+                content: STRINGS.errors.permissionDenied,
                 ephemeral: true,
             });
         }
@@ -52,26 +67,26 @@ module.exports = {
 
         try {
             const res = await db.query(
-                "DELETE FROM quotes WHERE link = $1 RETURNING *",
+                "DELETE FROM fun.quotes WHERE link = $1 RETURNING *",
                 [link]
             );
 
             if (res.rowCount === 0) {
-                return interaction.editReply("⚠️ Quote not found.");
+                return interaction.editReply(STRINGS.errors.notFound);
             }
 
             const jsonLog = JSON.stringify(res.rows[0], null, 2);
             await sendLog(
                 interaction,
-                "Quote deleted",
+                STRINGS.messages.logHeader,
                 `\`\`\`json\n${jsonLog}\n\`\`\``
             );
 
-            return interaction.editReply("✅ Quote removed.");
+            return interaction.editReply(STRINGS.messages.removed);
         } catch (error) {
             console.error(error);
             return interaction.editReply({
-                content: `An error occurred: ${error.message}`,
+                content: STRINGS.errors.error(error.message),
             });
         }
     },

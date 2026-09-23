@@ -46,7 +46,7 @@ module.exports = async function generateStaffReport(client, guildId, lookbackDay
 
     // 1. User Activity (Last Message)
     const activityRes = await db.query(
-        `SELECT user_id, last_seen FROM user_activity WHERE user_id = ANY($1::text[])`,
+        `SELECT user_id, last_seen FROM moderation.activity WHERE user_id = ANY($1::text[])`,
         [staffIds]
     );
 

@@ -9,10 +9,30 @@ const {
 
 const ROLE_CATEGORIES = require("../../data/role-categories.js");
 
+const STRINGS = {
+    command: {
+        name: "gradient-roles",
+        description: "Pick your cosmetic roles",
+    },
+    selectMenus: {
+        placeholder: (catLabel) => `Select: ${catLabel}`,
+    },
+    buttons: {
+        unequipAll: "Unequip All Cosmetics",
+    },
+    messages: {
+        selectRolePrompt: "Select a cosmetic role below:",
+    },
+    errors: {
+        noRolesFound: "No cosmetic roles found in configuration.",
+        loadError: "An error occurred while loading the roles. Please try again later.",
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("gradient-roles")
-        .setDescription("Pick your cosmetic roles"),
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description),
 
     async execute(interaction) {
         try {
@@ -61,7 +81,7 @@ module.exports = {
 
                     const menu = new StringSelectMenuBuilder()
                         .setCustomId(`select_${cat.id}`)
-                        .setPlaceholder(`Select: ${cat.label}`)
+                        .setPlaceholder(STRINGS.selectMenus.placeholder(cat.label))
                         .addOptions(menuOptions);
 
                     components.push(new ActionRowBuilder().addComponents(menu));
@@ -71,7 +91,7 @@ module.exports = {
             // 3. Add Unequip Button
             const unequipBtn = new ButtonBuilder()
                 .setCustomId("unequip_all")
-                .setLabel("Unequip All Cosmetics")
+                .setLabel(STRINGS.buttons.unequipAll)
                 .setStyle(ButtonStyle.Danger);
 
             components.push(new ActionRowBuilder().addComponents(unequipBtn));
@@ -79,19 +99,19 @@ module.exports = {
             if (components.length === 0) {
                 // Change reply to editReply
                 return interaction.editReply({
-                    content: "No cosmetic roles found in configuration.",
+                    content: STRINGS.errors.noRolesFound,
                 });
             }
 
             // 4. Send Message (Change reply to editReply)
             await interaction.editReply({
-                content: "Select a cosmetic role below:",
+                content: STRINGS.messages.selectRolePrompt,
                 components: components,
             });
         } catch (error) {
             console.error("Error in gradient-roles:", error);
             await interaction.editReply({
-                content: "An error occurred while loading the roles. Please try again later.",
+                content: STRINGS.errors.loadError,
             });
         }
     },

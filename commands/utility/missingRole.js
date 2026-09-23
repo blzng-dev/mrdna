@@ -13,10 +13,30 @@ const TARGET_ROLE_ID = "868049671694716969";
 
 const EXCEPTION_IDS = ["732177983741362256"];
 
+const STRINGS = {
+    command: {
+        name: "check-missing-role",
+        description: "List members without the role",
+    },
+    status: {
+        allHaveRole: (roleId) => `Everyone (except exceptions) has the <@&${roleId}> role!`,
+        header: (count, roleId) => `**Found ${count} members** without <@&${roleId}>:`,
+        tooLongNotice: "(List too long, see attached file)",
+        operationComplete: (success, failed) => `**Operation Complete**\nGiven role to: ${success}\nFailed: ${failed}`,
+    },
+    buttons: {
+        giveRoleAll: (count) => `Give Role to All (${count})`,
+        processing: "Processing...",
+    },
+    errors: {
+        cannotUseButton: "You cannot use this button.",
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("check-missing-role")
-        .setDescription("List members without the role")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
@@ -36,7 +56,7 @@ module.exports = {
 
         if (missingMembers.size === 0) {
             return interaction.editReply(
-                `Everyone (except exceptions) has the <@&${TARGET_ROLE_ID}> role!`
+                STRINGS.status.allHaveRole(TARGET_ROLE_ID)
             );
         }
 
@@ -44,12 +64,12 @@ module.exports = {
         const list = missingMembers
             .map((m) => `${m.user.tag} (${m.id})`)
             .join("\n");
-        const header = `**Found ${missingMembers.size} members** without <@&${TARGET_ROLE_ID}>:`;
+        const header = STRINGS.status.header(missingMembers.size, TARGET_ROLE_ID);
 
         // 3. Create the "Fix It" Button
         const fixButton = new ButtonBuilder()
             .setCustomId("fix_roles")
-            .setLabel(`Give Role to All (${missingMembers.size})`)
+            .setLabel(STRINGS.buttons.giveRoleAll(missingMembers.size))
             .setStyle(ButtonStyle.Primary);
 
         const row = new ActionRowBuilder().addComponents(fixButton);
@@ -67,7 +87,7 @@ module.exports = {
                 name: "missing_role.txt",
             });
             response = await interaction.editReply({
-                content: `${header}\n(List too long, see attached file)`,
+                content: `${header}\n${STRINGS.status.tooLongNotice}`,
                 files: [attachment],
                 components: [row],
             });
@@ -82,13 +102,13 @@ module.exports = {
         collector.on("collect", async (i) => {
             if (i.user.id !== interaction.user.id) {
                 return i.reply({
-                    content: "You cannot use this button.",
+                    content: STRINGS.errors.cannotUseButton,
                     flags: MessageFlags.Ephemeral,
                 });
             }
 
             // Disable button immediately
-            fixButton.setDisabled(true).setLabel("Processing...");
+            fixButton.setDisabled(true).setLabel(STRINGS.buttons.processing);
             await i.update({
                 components: [new ActionRowBuilder().addComponents(fixButton)],
             });
@@ -111,7 +131,7 @@ module.exports = {
             }
 
             await interaction.followUp({
-                content: `**Operation Complete**\nGiven role to: ${successCount}\nFailed: ${failCount}`,
+                content: STRINGS.status.operationComplete(successCount, failCount),
                 flags: MessageFlags.Ephemeral,
             });
         });

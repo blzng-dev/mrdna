@@ -14,16 +14,48 @@ const {
 
 const { countGalleriesAndItems, insertMediaIntoComponents } = require('../../utils/messageParser');
 
+const STRINGS = {
+    command: {
+        name: 'Add Media',
+    },
+    modals: {
+        title: 'Add Media',
+        galleryLabel: 'Target Gallery',
+        galleryPlaceholder: 'Select which gallery to add media to',
+        galleryOption: (num) => `Gallery ${num}`,
+        galleryOptionDesc: (num, count) => `Add to Gallery ${num} (${count} image${count === 1 ? '' : 's'})`,
+        newGalleryOption: 'New Gallery',
+        newGalleryOptionDesc: 'Create a new Media Gallery in the message',
+        positionLabel: 'Position in Gallery / Message',
+        positionPlaceholder: 'Select position (defaults to End/Bottom)',
+        positionEnd: 'End / Bottom (Default)',
+        positionEndDesc: 'Append to the end of the gallery / bottom of message',
+        positionStart: 'Start / Top (Position 1)',
+        positionStartDesc: 'Insert at the beginning of the gallery / top of message',
+        positionN: (p) => `Position ${p}`,
+        positionNDesc: (p) => `Insert at position ${p} (after image ${p - 1})`,
+        uploadLabel: 'Upload Image(s)',
+    },
+    errors: {
+        notOwnMessage: 'I can only manage media on my own messages.',
+        noImagesUploaded: 'No images were uploaded.',
+        failedToAdd: 'Failed to add media to the message.',
+    },
+    messages: {
+        success: (count, targetText, posDesc) => `Successfully added ${count} image(s) to ${targetText} at ${posDesc}!`,
+    },
+};
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Add Media')
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
     async execute(interaction) {
         if (interaction.targetMessage.author.id !== interaction.client.user.id) {
             return interaction.reply({
-                content: 'I can only manage media on my own messages.',
+                content: STRINGS.errors.notOwnMessage,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -38,60 +70,60 @@ module.exports = {
         for (const info of galleryInfo) {
             selectOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`Gallery ${info.galleryNumber}`)
+                    .setLabel(STRINGS.modals.galleryOption(info.galleryNumber))
                     .setValue(`${info.galleryNumber}`)
-                    .setDescription(`Add to Gallery ${info.galleryNumber} (${info.itemCount} image${info.itemCount === 1 ? '' : 's'})`)
+                    .setDescription(STRINGS.modals.galleryOptionDesc(info.galleryNumber, info.itemCount))
             );
         }
 
         selectOptions.push(
             new StringSelectMenuOptionBuilder()
-                .setLabel('New Gallery')
+                .setLabel(STRINGS.modals.newGalleryOption)
                 .setValue('new')
-                .setDescription('Create a new Media Gallery in the message')
+                .setDescription(STRINGS.modals.newGalleryOptionDesc)
         );
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('target_gallery')
-            .setPlaceholder('Select which gallery to add media to')
+            .setPlaceholder(STRINGS.modals.galleryPlaceholder)
             .setMinValues(1)
             .setMaxValues(1)
             .addOptions(selectOptions);
 
         const selectLabel = new LabelBuilder()
-            .setLabel('Target Gallery')
+            .setLabel(STRINGS.modals.galleryLabel)
             .setStringSelectMenuComponent(selectMenu);
 
         const positionOptions = [
             new StringSelectMenuOptionBuilder()
-                .setLabel('End / Bottom (Default)')
+                .setLabel(STRINGS.modals.positionEnd)
                 .setValue('end')
-                .setDescription('Append to the end of the gallery / bottom of message'),
+                .setDescription(STRINGS.modals.positionEndDesc),
             new StringSelectMenuOptionBuilder()
-                .setLabel('Start / Top (Position 1)')
+                .setLabel(STRINGS.modals.positionStart)
                 .setValue('1')
-                .setDescription('Insert at the beginning of the gallery / top of message')
+                .setDescription(STRINGS.modals.positionStartDesc)
         ];
 
         for (let p = 2; p <= 10; p++) {
             positionOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`Position ${p}`)
+                    .setLabel(STRINGS.modals.positionN(p))
                     .setValue(`${p}`)
-                    .setDescription(`Insert at position ${p} (after image ${p - 1})`)
+                    .setDescription(STRINGS.modals.positionNDesc(p))
             );
         }
 
         const positionSelect = new StringSelectMenuBuilder()
             .setCustomId('media_position')
-            .setPlaceholder('Select position (defaults to End/Bottom)')
+            .setPlaceholder(STRINGS.modals.positionPlaceholder)
             .setRequired(false)
             .setMinValues(1)
             .setMaxValues(1)
             .addOptions(positionOptions);
 
         const positionLabel = new LabelBuilder()
-            .setLabel('Position in Gallery / Message')
+            .setLabel(STRINGS.modals.positionLabel)
             .setStringSelectMenuComponent(positionSelect);
 
         const fileUpload = new FileUploadBuilder()
@@ -101,12 +133,12 @@ module.exports = {
             .setMaxValues(10);
 
         const fileLabel = new LabelBuilder()
-            .setLabel('Upload Image(s)')
+            .setLabel(STRINGS.modals.uploadLabel)
             .setFileUploadComponent(fileUpload);
 
         const modal = new ModalBuilder()
             .setCustomId(`add_media_modal_${interaction.targetId}`)
-            .setTitle('Add Media')
+            .setTitle(STRINGS.modals.title)
             .addComponents(selectLabel, positionLabel, fileLabel);
 
         await interaction.showModal(modal);
@@ -139,7 +171,7 @@ module.exports = {
 
         if (attachments.length === 0) {
             return interaction.editReply({
-                content: 'No images were uploaded.'
+                content: STRINGS.errors.noImagesUploaded
             });
         }
 
@@ -179,13 +211,14 @@ module.exports = {
             });
 
             const posDesc = positionChoice === 'end' ? 'end' : positionChoice === '1' ? 'start' : `position ${positionChoice}`;
+            const targetText = targetChoice === 'new' ? 'a new gallery' : `Gallery ${targetChoice}`;
             await interaction.editReply({
-                content: `Successfully added ${newMediaItems.length} image(s) to ${targetChoice === 'new' ? 'a new gallery' : `Gallery ${targetChoice}`} at ${posDesc}!`
+                content: STRINGS.messages.success(newMediaItems.length, targetText, posDesc)
             });
         } catch (error) {
             console.error(error);
             await interaction.editReply({
-                content: 'Failed to add media to the message.'
+                content: STRINGS.errors.failedToAdd
             });
         }
     }

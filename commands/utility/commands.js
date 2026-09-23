@@ -7,16 +7,27 @@ const {
 } = require("discord.js");
 const commandData = require("../../data/command-data.json");
 
+const STRINGS = {
+    command: {
+        name: "commands",
+        description: "Shows a list of available bot commands",
+    },
+    errors: {
+        notFound: "Command list configuration not found.",
+        generic: "An error occurred while fetching the command list.",
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("commands")
-        .setDescription("Shows a list of available bot commands"),
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description),
 
     async execute(interaction) {
         try {
             if (!commandData || !commandData.content) {
                 return interaction.reply({
-                    content: "Command list configuration not found.",
+                    content: STRINGS.errors.notFound,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -74,8 +85,7 @@ module.exports = {
             console.error("Error in commands command:", error);
             if (!interaction.replied) {
                 await interaction.reply({
-                    content:
-                        "An error occurred while fetching the command list.",
+                    content: STRINGS.errors.generic,
                     flags: MessageFlags.Ephemeral,
                 });
             }

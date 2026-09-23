@@ -12,39 +12,58 @@ const {
 
 const { findEmojiByNameOrId } = require('../../utils/emojiResolver');
 
+const STRINGS = {
+    command: {
+        name: 'Add Link Button',
+    },
+    modals: {
+        title: 'Add Link Button',
+        label: 'Label',
+        url: 'Link URL',
+        emoji: 'Emoji (Name, ID, or <a:name:id>)',
+    },
+    errors: {
+        notOwnMessage: 'I can only add buttons to my own messages.',
+        failedToAdd: 'Failed to add link button. Make sure the URL is valid.',
+    },
+    messages: {
+        success: 'Link button added successfully.',
+    },
+};
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Add Link Button')
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
     async execute(interaction) {
         if (interaction.targetMessage.author.id !== interaction.client.user.id) {
             return interaction.reply({
-                content: 'I can only add buttons to my own messages.',
+                content: STRINGS.errors.notOwnMessage,
                 flags: MessageFlags.Ephemeral
             });
         }
 
         const modal = new ModalBuilder()
             .setCustomId(`add_link_modal_${interaction.targetId}`)
-            .setTitle('Add Link Button');
+            .setTitle(STRINGS.modals.title);
 
         const labelInput = new TextInputBuilder()
             .setCustomId('button_label')
-            .setLabel('Label')
+            .setLabel(STRINGS.modals.label)
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
         const urlInput = new TextInputBuilder()
             .setCustomId('button_url')
-            .setLabel('Link URL')
+            .setLabel(STRINGS.modals.url)
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
         const emojiInput = new TextInputBuilder()
             .setCustomId('button_emoji')
-            .setLabel('Emoji (Name, ID, or <a:name:id>)')
+            .setLabel(STRINGS.modals.emoji)
             .setStyle(TextInputStyle.Short)
             .setRequired(false);
 
@@ -114,13 +133,13 @@ module.exports = {
             );
 
             await interaction.reply({
-                content: 'Link button added successfully.',
+                content: STRINGS.messages.success,
                 flags: MessageFlags.Ephemeral
             });
         } catch (error) {
             console.error(error);
             await interaction.reply({
-                content: 'Failed to add link button. Make sure the URL is valid.',
+                content: STRINGS.errors.failedToAdd,
                 flags: MessageFlags.Ephemeral
             });
         }

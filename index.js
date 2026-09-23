@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const postActivity = require("./jobs/activityPoster");
 const startKeepAlive = require("./keep_alive");
+const startGiveawayWorker = require("./jobs/giveawayWorker");
 
 // Start HTTP Server immediately for health checks
 // startKeepAlive(); Moved to inside ClientReady
@@ -17,6 +18,7 @@ const {
     ActivityType,
     MessageFlags,
 } = require("discord.js");
+const { attachEmojiResolver } = require("./utils/emojiResolver");
 
 const token = process.env.TOKEN;
 
@@ -30,6 +32,8 @@ const client = new Client({
         GatewayIntentBits.GuildEmojisAndStickers,
     ],
 });
+
+attachEmojiResolver(client);
 
 client.commands = new Collection();
 
@@ -74,6 +78,7 @@ for (const file of eventFiles) {
 client.once(Events.ClientReady, (c) => {
     startKeepAlive();
     postActivity(client);
+    startGiveawayWorker(client);
 });
 
 // Global Error Handling

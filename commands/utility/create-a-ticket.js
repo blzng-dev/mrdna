@@ -2,13 +2,33 @@ const { SlashCommandBuilder, ChannelType, ActionRowBuilder, UserSelectMenuBuilde
 
 const CATEGORY_ID = '860078313631383552';
 
+const STRINGS = {
+    command: {
+        name: 'create-a-ticket',
+        description: 'Creates a generic ticket channel',
+        optionUserDescription: 'An initial user to add to the ticket',
+    },
+    selectMenu: {
+        placeholder: 'Select users to add to the ticket',
+        prompt: 'Please select the users to add to the ticket:',
+    },
+    status: {
+        creating: 'Creating ticket...',
+        created: (channel) => `Ticket channel created: ${channel}`,
+    },
+    errors: {
+        failed: 'Failed to create ticket channel.',
+        timeoutOrFailed: 'Ticket creation timed out or failed.',
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('create-a-ticket')
-        .setDescription('Creates a generic ticket channel')
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addUserOption(option =>
             option.setName('user')
-                .setDescription('An initial user to add to the ticket')
+                .setDescription(STRINGS.command.optionUserDescription)
                 .setRequired(false)
         ),
 
@@ -21,22 +41,22 @@ module.exports = {
             const channel = await createTicketChannel(interaction, [optionUser.id]);
 
             if (channel) {
-                await interaction.editReply(`Ticket channel created: ${channel}`);
+                await interaction.editReply(STRINGS.status.created(channel));
             } else {
-                await interaction.editReply('Failed to create ticket channel.');
+                await interaction.editReply(STRINGS.errors.failed);
             }
         } else {
             // No user mentioned -> Show user select menu
             const userSelect = new UserSelectMenuBuilder()
                 .setCustomId('ticket_user_select')
-                .setPlaceholder('Select users to add to the ticket')
+                .setPlaceholder(STRINGS.selectMenu.placeholder)
                 .setMinValues(1)
                 .setMaxValues(10);
 
             const row = new ActionRowBuilder().addComponents(userSelect);
 
             const response = await interaction.reply({
-                content: 'Please select the users to add to the ticket:',
+                content: STRINGS.selectMenu.prompt,
                 components: [row],
                 flags: MessageFlags.Ephemeral
             });
@@ -50,7 +70,7 @@ module.exports = {
                 });
 
                 await confirmation.update({
-                    content: 'Creating ticket...',
+                    content: STRINGS.status.creating,
                     components: []
                 });
 
@@ -58,14 +78,14 @@ module.exports = {
                 const channel = await createTicketChannel(interaction, selectedUserIds);
 
                 if (channel) {
-                    await confirmation.editReply(`Ticket channel created: ${channel}`);
+                    await confirmation.editReply(STRINGS.status.created(channel));
                 } else {
-                    await confirmation.editReply('Failed to create ticket channel.');
+                    await confirmation.editReply(STRINGS.errors.failed);
                 }
             } catch (error) {
                 // If it times out or fails
                 await interaction.editReply({
-                    content: 'Ticket creation timed out or failed.',
+                    content: STRINGS.errors.timeoutOrFailed,
                     components: []
                 }).catch(() => { });
             }

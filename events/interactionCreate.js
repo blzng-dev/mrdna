@@ -8,6 +8,10 @@ const {
 } = require("discord.js");
 const menuData = require("../data/menu-data.json");
 const commandData = require("../data/command-data.json");
+const {
+    handleGiveawayModal,
+    handleGiveawayButton,
+} = require("../utils/giveawayInteractionHandler");
 
 const TRANSCRIPT_LOG_CHANNEL_ID = "915884828153511946";
 
@@ -15,7 +19,7 @@ const ROLE_CATEGORIES = require("../data/role-categories.js");
 
 // Build REVOKE_CONFIGS the same way role.js does, for button handler use
 const REVOKE_CONFIGS = {};
-ROLE_CATEGORIES.forEach(cat => {
+ROLE_CATEGORIES.forEach((cat) => {
     REVOKE_CONFIGS[cat.id] = {
         minRoleId: cat.minId,
         maxRoleId: cat.maxId,
@@ -36,18 +40,25 @@ function scanCategoryForRevoke(guild, config) {
     const upperBound = Math.max(minRole.position, maxRole.position);
 
     const targetRoles = guild.roles.cache.filter(
-        (role) => role.position > lowerBound && role.position < upperBound
+        (role) => role.position > lowerBound && role.position < upperBound,
     );
     if (targetRoles.size === 0) return null;
 
     const usersToProcess = new Map();
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
-        const isAuthorized = config.requiredRoleIds.some(id => member.roles.cache.has(id));
+        const isAuthorized = config.requiredRoleIds.some((id) =>
+            member.roles.cache.has(id),
+        );
         if (!isAuthorized) {
-            const rolesToRemove = member.roles.cache.filter(r => targetRoles.has(r.id));
+            const rolesToRemove = member.roles.cache.filter((r) =>
+                targetRoles.has(r.id),
+            );
             if (rolesToRemove.size > 0) {
-                usersToProcess.set(member.id, { member, roles: Array.from(rolesToRemove.values()) });
+                usersToProcess.set(member.id, {
+                    member,
+                    roles: Array.from(rolesToRemove.values()),
+                });
             }
         }
     });
@@ -59,9 +70,12 @@ module.exports = {
     async execute(interaction) {
         try {
             // 1. SLASH COMMANDS & CONTEXT MENUS
-            if (interaction.isChatInputCommand() || interaction.isContextMenuCommand()) {
+            if (
+                interaction.isChatInputCommand() ||
+                interaction.isContextMenuCommand()
+            ) {
                 const command = interaction.client.commands.get(
-                    interaction.commandName
+                    interaction.commandName,
                 );
                 if (!command) return;
 
@@ -69,7 +83,9 @@ module.exports = {
                     await command.execute(interaction);
                 } catch (error) {
                     if (error.code === 10062) {
-                        console.warn(`[Command Warning] Unknown Interaction (Timeout) for ${interaction.commandName}`);
+                        console.warn(
+                            `[Command Warning] Unknown Interaction (Timeout) for ${interaction.commandName}`,
+                        );
                     } else {
                         console.error(error);
                     }
@@ -77,19 +93,24 @@ module.exports = {
                     try {
                         if (interaction.replied || interaction.deferred) {
                             await interaction.followUp({
-                                content: "There was an error executing this command!",
+                                content:
+                                    "There was an error executing this command!",
                                 flags: MessageFlags.Ephemeral,
                             });
                         } else {
                             await interaction.reply({
-                                content: "There was an error executing this command!",
+                                content:
+                                    "There was an error executing this command!",
                                 flags: MessageFlags.Ephemeral,
                             });
                         }
                     } catch (err) {
                         // Ignore secondary errors (e.g. Unknown Interaction if timed out)
                         if (err.code !== 10062) {
-                            console.error("Failed to send error response:", err.message);
+                            console.error(
+                                "Failed to send error response:",
+                                err.message,
+                            );
                         }
                     }
                 }
@@ -99,7 +120,7 @@ module.exports = {
             // 2. AUTOCOMPLETE (NEW - REQUIRED FOR WORDLE CATEGORIES)
             if (interaction.isAutocomplete()) {
                 const command = interaction.client.commands.get(
-                    interaction.commandName
+                    interaction.commandName,
                 );
                 if (!command) return;
 
@@ -113,11 +134,29 @@ module.exports = {
 
             // 2.5 MODAL SUBMITS
             if (interaction.isModalSubmit()) {
-                if (interaction.customId.startsWith('forum_title_modal_')) {
-                    const messageCommand = interaction.client.commands.get('message');
-                    if (messageCommand && messageCommand.handleForumTitleModal) {
+                if (
+                    interaction.customId.startsWith("giveaway_create_modal_") ||
+                    interaction.customId.startsWith("giveaway_edit_modal_")
+                ) {
+                    try {
+                        await handleGiveawayModal(interaction);
+                    } catch (error) {
+                        console.error("[Giveaway Modal Error]", error);
+                    }
+                    return;
+                }
+
+                if (interaction.customId.startsWith("forum_title_modal_")) {
+                    const messageCommand =
+                        interaction.client.commands.get("message");
+                    if (
+                        messageCommand &&
+                        messageCommand.handleForumTitleModal
+                    ) {
                         try {
-                            await messageCommand.handleForumTitleModal(interaction);
+                            await messageCommand.handleForumTitleModal(
+                                interaction,
+                            );
                         } catch (error) {
                             console.error(error);
                         }
@@ -126,22 +165,34 @@ module.exports = {
                 }
 
                 let commandName = null;
-                if (interaction.customId === 'message_modal' || interaction.customId.startsWith('message_modal_')) {
-                    commandName = 'message';
-                } else if (interaction.customId.startsWith('edit_message_modal')) {
-                    commandName = 'Edit Message';
-                } else if (interaction.customId.startsWith('add_link_modal_')) {
-                    commandName = 'Add Link Button';
-                } else if (interaction.customId.startsWith('replace_media_modal_')) {
-                    commandName = 'Replace Media';
-                } else if (interaction.customId.startsWith('add_media_modal_')) {
-                    commandName = 'Add Media';
-                } else if (interaction.customId.startsWith('remove_media_modal_')) {
-                    commandName = 'Remove Media';
+                if (
+                    interaction.customId === "message_modal" ||
+                    interaction.customId.startsWith("message_modal_")
+                ) {
+                    commandName = "message";
+                } else if (
+                    interaction.customId.startsWith("edit_message_modal")
+                ) {
+                    commandName = "Edit Message";
+                } else if (interaction.customId.startsWith("add_link_modal_")) {
+                    commandName = "Add Link Button";
+                } else if (
+                    interaction.customId.startsWith("replace_media_modal_")
+                ) {
+                    commandName = "Replace Media";
+                } else if (
+                    interaction.customId.startsWith("add_media_modal_")
+                ) {
+                    commandName = "Add Media";
+                } else if (
+                    interaction.customId.startsWith("remove_media_modal_")
+                ) {
+                    commandName = "Remove Media";
                 }
-                
+
                 if (commandName) {
-                    const command = interaction.client.commands.get(commandName);
+                    const command =
+                        interaction.client.commands.get(commandName);
                     if (command && command.handleModal) {
                         try {
                             await command.handleModal(interaction);
@@ -157,9 +208,28 @@ module.exports = {
             if (interaction.isButton()) {
                 const customId = interaction.customId;
 
+                // --- Giveaway Buttons (Entry Toggle & Multi-Role Prompt) ---
+                if (
+                    customId === "giveaway_enter" ||
+                    customId.startsWith("giveaway_enter_") ||
+                    customId.startsWith("giveaway_rolemode_")
+                ) {
+                    try {
+                        await handleGiveawayButton(interaction);
+                    } catch (error) {
+                        console.error("[Giveaway Button Error]", error);
+                    }
+                    return;
+                }
+
                 // --- Forum Post Setup Buttons ---
-                if (customId.startsWith('forum_title_btn_') || customId.startsWith('forum_confirm_') || customId.startsWith('forum_cancel_')) {
-                    const messageCommand = interaction.client.commands.get('message');
+                if (
+                    customId.startsWith("forum_title_btn_") ||
+                    customId.startsWith("forum_confirm_") ||
+                    customId.startsWith("forum_cancel_")
+                ) {
+                    const messageCommand =
+                        interaction.client.commands.get("message");
                     if (messageCommand && messageCommand.handleForumButton) {
                         try {
                             await messageCommand.handleForumButton(interaction);
@@ -184,7 +254,7 @@ module.exports = {
                     await interaction.deferUpdate();
 
                     const logChannel = await interaction.guild.channels.fetch(
-                        TRANSCRIPT_LOG_CHANNEL_ID
+                        TRANSCRIPT_LOG_CHANNEL_ID,
                     );
                     if (logChannel) {
                         await logChannel.send({
@@ -193,13 +263,15 @@ module.exports = {
                         });
 
                         const disabledRow = ActionRowBuilder.from(
-                            interaction.message.components[0]
+                            interaction.message.components[0],
                         );
                         disabledRow.components[0]
                             .setDisabled(true)
                             .setLabel("Sent to Logs")
                             .setStyle(ButtonStyle.Success);
-                        await interaction.editReply({ components: [disabledRow] });
+                        await interaction.editReply({
+                            components: [disabledRow],
+                        });
                     } else {
                         await interaction.followUp({
                             content: "Log channel not found.",
@@ -219,24 +291,24 @@ module.exports = {
                     await interaction.guild.roles.fetch();
                     for (const cat of ROLE_CATEGORIES) {
                         const minRole = interaction.guild.roles.cache.get(
-                            cat.minId
+                            cat.minId,
                         );
                         const maxRole = interaction.guild.roles.cache.get(
-                            cat.maxId
+                            cat.maxId,
                         );
                         if (minRole && maxRole) {
                             interaction.guild.roles.cache.forEach((r) => {
                                 if (
                                     r.position >
-                                    Math.min(
-                                        minRole.position,
-                                        maxRole.position
-                                    ) &&
+                                        Math.min(
+                                            minRole.position,
+                                            maxRole.position,
+                                        ) &&
                                     r.position <
-                                    Math.max(
-                                        minRole.position,
-                                        maxRole.position
-                                    )
+                                        Math.max(
+                                            minRole.position,
+                                            maxRole.position,
+                                        )
                                 ) {
                                     allCosmeticRoleIds.push(r.id);
                                 }
@@ -245,12 +317,12 @@ module.exports = {
                     }
 
                     const rolesToRemove = interaction.member.roles.cache.filter(
-                        (r) => allCosmeticRoleIds.includes(r.id)
+                        (r) => allCosmeticRoleIds.includes(r.id),
                     );
                     if (rolesToRemove.size > 0) {
                         await interaction.member.roles.remove(rolesToRemove);
                         await interaction.editReply({
-                            content: `removed: ${rolesToRemove.map(r => r.toString()).join(', ')}`,
+                            content: `removed: ${rolesToRemove.map((r) => r.toString()).join(", ")}`,
                         });
                     } else {
                         await interaction.editReply({
@@ -278,31 +350,41 @@ module.exports = {
 
                 // --- D. Revoke Execute Button ---
                 if (customId.startsWith("revoke_execute_")) {
-                    if (!interaction.member.permissions.has(0x10000000n)) { // ManageRoles
+                    if (!interaction.member.permissions.has(0x10000000n)) {
+                        // ManageRoles
                         return interaction.reply({
-                            content: 'You need the "Manage Roles" permission to use this.',
+                            content:
+                                'You need the "Manage Roles" permission to use this.',
                             flags: MessageFlags.Ephemeral,
                         });
                     }
 
-                    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                    await interaction.deferReply({
+                        flags: MessageFlags.Ephemeral,
+                    });
                     await Promise.all([
                         interaction.guild.roles.fetch(),
                         interaction.guild.members.fetch({ time: 60_000 }),
                     ]);
 
                     const categoryKey = customId.replace("revoke_execute_", "");
-                    const categoriesToProcess = categoryKey === "all"
-                        ? ROLE_CATEGORIES
-                        : ROLE_CATEGORIES.filter(c => c.id === categoryKey);
+                    const categoriesToProcess =
+                        categoryKey === "all"
+                            ? ROLE_CATEGORIES
+                            : ROLE_CATEGORIES.filter(
+                                  (c) => c.id === categoryKey,
+                              );
 
                     if (categoriesToProcess.length === 0) {
-                        return interaction.editReply({ content: "Unknown category." });
+                        return interaction.editReply({
+                            content: "Unknown category.",
+                        });
                     }
 
-                    let response = categoryKey === "all"
-                        ? `# Unauthorized Roles — All Categories (Execute)\n\n`
-                        : `# Unauthorized ${REVOKE_CONFIGS[categoryKey]?.title} (Execute)\n\n`;
+                    let response =
+                        categoryKey === "all"
+                            ? `# Unauthorized Roles — All Categories (Execute)\n\n`
+                            : `# Unauthorized ${REVOKE_CONFIGS[categoryKey]?.title} (Execute)\n\n`;
 
                     let totalRemoved = 0;
                     let totalFailed = 0;
@@ -312,25 +394,36 @@ module.exports = {
                         const config = REVOKE_CONFIGS[cat.id];
                         if (!config) continue;
 
-                        const usersToProcess = await scanCategoryForRevoke(interaction.guild, config);
+                        const usersToProcess = await scanCategoryForRevoke(
+                            interaction.guild,
+                            config,
+                        );
 
                         if (!usersToProcess || usersToProcess.size === 0) {
-                            if (categoryKey === "all") response += `## ${config.title}\n✅ No unauthorized users.\n\n`;
+                            if (categoryKey === "all")
+                                response += `## ${config.title}\n:checkmark: No unauthorized users.\n\n`;
                             continue;
                         }
 
-                        if (categoryKey === "all") response += `## ${config.title}\n`;
+                        if (categoryKey === "all")
+                            response += `## ${config.title}\n`;
                         totalUsers += usersToProcess.size;
 
-                        for (const [userId, { member, roles }] of usersToProcess.entries()) {
+                        for (const [
+                            userId,
+                            { member, roles },
+                        ] of usersToProcess.entries()) {
                             response += `<@${userId}>:\n`;
                             for (const role of roles) {
                                 try {
-                                    await member.roles.remove(role, config.unauthorizedReason);
-                                    response += `- ✅ Removed <@&${role.id}>\n`;
+                                    await member.roles.remove(
+                                        role,
+                                        config.unauthorizedReason,
+                                    );
+                                    response += `- :checkmark: Removed <@&${role.id}>\n`;
                                     totalRemoved++;
                                 } catch (err) {
-                                    response += `- ⚠️ Failed <@&${role.id}>: ${err.message}\n`;
+                                    response += `- :warning: Failed <@&${role.id}>: ${err.message}\n`;
                                     totalFailed++;
                                 }
                             }
@@ -342,13 +435,23 @@ module.exports = {
 
                     // Disable the button on the original list message
                     try {
-                        const disabledRow = ActionRowBuilder.from(interaction.message.components[0]);
-                        disabledRow.components[0].setDisabled(true).setLabel("Revoke Executed").setStyle(ButtonStyle.Secondary);
-                        await interaction.message.edit({ components: [disabledRow] });
+                        const disabledRow = ActionRowBuilder.from(
+                            interaction.message.components[0],
+                        );
+                        disabledRow.components[0]
+                            .setDisabled(true)
+                            .setLabel("Revoke Executed")
+                            .setStyle(ButtonStyle.Secondary);
+                        await interaction.message.edit({
+                            components: [disabledRow],
+                        });
                     } catch (_) {}
 
                     return interaction.editReply({
-                        content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                        content:
+                            response.length > 2000
+                                ? response.substring(0, 1997) + "..."
+                                : response,
                     });
                 }
 
@@ -404,11 +507,14 @@ module.exports = {
                 const customId = interaction.customId;
                 const selectedValue = interaction.values[0];
 
-                if (customId.startsWith('forum_tag_')) {
-                    const messageCommand = interaction.client.commands.get('message');
+                if (customId.startsWith("forum_tag_")) {
+                    const messageCommand =
+                        interaction.client.commands.get("message");
                     if (messageCommand && messageCommand.handleForumTagSelect) {
                         try {
-                            await messageCommand.handleForumTagSelect(interaction);
+                            await messageCommand.handleForumTagSelect(
+                                interaction,
+                            );
                         } catch (error) {
                             console.error(error);
                         }
@@ -424,7 +530,9 @@ module.exports = {
                         });
                     }
 
-                    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                    await interaction.deferReply({
+                        flags: MessageFlags.Ephemeral,
+                    });
                     await Promise.all([
                         interaction.guild.roles.fetch(),
                         interaction.guild.members.fetch({ time: 60_000 }),
@@ -440,25 +548,34 @@ module.exports = {
                         const config = REVOKE_CONFIGS[catId];
                         if (!config) continue;
 
-                        const usersToProcess = await scanCategoryForRevoke(interaction.guild, config);
+                        const usersToProcess = await scanCategoryForRevoke(
+                            interaction.guild,
+                            config,
+                        );
 
                         if (!usersToProcess || usersToProcess.size === 0) {
-                            response += `## ${config.title}\n✅ No unauthorized users.\n`;
+                            response += `## ${config.title}\n:checkmark: No unauthorized users.\n`;
                             continue;
                         }
 
                         response += `## ${config.title}\n`;
                         totalUsers += usersToProcess.size;
 
-                        for (const [userId, { member, roles }] of usersToProcess.entries()) {
+                        for (const [
+                            userId,
+                            { member, roles },
+                        ] of usersToProcess.entries()) {
                             response += `<@${userId}>:\n`;
                             for (const role of roles) {
                                 try {
-                                    await member.roles.remove(role, config.unauthorizedReason);
-                                    response += `- ✅ Removed <@&${role.id}>\n`;
+                                    await member.roles.remove(
+                                        role,
+                                        config.unauthorizedReason,
+                                    );
+                                    response += `- :checkmark: Removed <@&${role.id}>\n`;
                                     totalRemoved++;
                                 } catch (err) {
-                                    response += `- ⚠️ Failed <@&${role.id}>: ${err.message}\n`;
+                                    response += `- :warning: Failed <@&${role.id}>: ${err.message}\n`;
                                     totalFailed++;
                                 }
                             }
@@ -469,26 +586,33 @@ module.exports = {
 
                     // Disable the select menu on the original message
                     try {
-                        const disabledMenu = StringSelectMenuBuilder
-                            .from(interaction.message.components[0].components[0])
+                        const disabledMenu = StringSelectMenuBuilder.from(
+                            interaction.message.components[0].components[0],
+                        )
                             .setDisabled(true)
                             .setPlaceholder("Revoke executed");
                         await interaction.message.edit({
-                            components: [new ActionRowBuilder().addComponents(disabledMenu)],
+                            components: [
+                                new ActionRowBuilder().addComponents(
+                                    disabledMenu,
+                                ),
+                            ],
                         });
                     } catch (_) {}
 
                     return interaction.editReply({
-                        content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                        content:
+                            response.length > 2000
+                                ? response.substring(0, 1997) + "..."
+                                : response,
                     });
                 }
 
                 if (customId.startsWith("select_")) {
-
                     await handleGradientSelection(
                         interaction,
                         customId,
-                        selectedValue
+                        selectedValue,
                     );
                     return;
                 }
@@ -502,7 +626,7 @@ module.exports = {
                 if (handler) {
                     const originalComponents = resetPlaceholder(
                         interaction,
-                        customId
+                        customId,
                     );
                     await interaction.update({
                         components: originalComponents,
@@ -535,7 +659,7 @@ async function handleGradientSelection(interaction, customId, selectedValue) {
         cat.requiredRoles.some((id) => interaction.member.roles.cache.has(id));
     if (!isAuthorized) {
         return interaction.editReply(
-            `You do not have permission to select roles from **${cat.label}**.`
+            `You do not have permission to select roles from **${cat.label}**.`,
         );
     }
 
@@ -563,17 +687,20 @@ async function handleGradientSelection(interaction, customId, selectedValue) {
     }
 
     const currentCosmetics = interaction.member.roles.cache.filter((r) =>
-        rolesToRemoveIds.includes(r.id)
+        rolesToRemoveIds.includes(r.id),
     );
-    
-    const removedRoles = currentCosmetics.size > 0 ? currentCosmetics.map(r => r.toString()).join(', ') : "";
+
+    const removedRoles =
+        currentCosmetics.size > 0
+            ? currentCosmetics.map((r) => r.toString()).join(", ")
+            : "";
 
     if (currentCosmetics.size > 0)
         await interaction.member.roles.remove(currentCosmetics);
 
     if (selectedRole) {
         await interaction.member.roles.add(selectedRole);
-        
+
         let content = `added: ${selectedRole.toString()}`;
         if (removedRoles) {
             content += `\nremoved: ${removedRoles}`;
@@ -622,12 +749,12 @@ async function handleRetiredStaff(interaction) {
         await interaction.deferUpdate();
         const members = await interaction.guild.members.fetch();
         const retiredRole = interaction.guild.roles.cache.get(
-            "1349062812722397305"
+            "1349062812722397305",
         );
         let content = "# RETIRED STAFF\n\n**Retired Staff**\n";
         if (retiredRole) {
             const retired = members.filter((m) =>
-                m.roles.cache.has(retiredRole.id)
+                m.roles.cache.has(retiredRole.id),
             );
             if (retired.size > 0)
                 retired.forEach((m) => (content += `- ${m.toString()}\n`));
@@ -643,7 +770,7 @@ async function handleStaffInfo(interaction) {
     try {
         const originalComponents = resetPlaceholder(
             interaction,
-            interaction.customId
+            interaction.customId,
         );
         await interaction.update({ components: originalComponents });
         const guild = interaction.guild;
@@ -657,11 +784,12 @@ async function handleStaffInfo(interaction) {
         };
         let content = "# STAFF\nhierarchy of staff in the server\n\n";
         const listMembers = (role, title) => {
-            content += `**${title}** (${role ? role.toString() : "Role not found"
-                })\n`;
+            content += `**${title}** (${
+                role ? role.toString() : "Role not found"
+            })\n`;
             if (role) {
                 const matched = members.filter((m) =>
-                    m.roles.cache.has(role.id)
+                    m.roles.cache.has(role.id),
                 );
                 if (matched.size > 0)
                     matched.forEach((m) => (content += `- ${m.toString()}\n`));
@@ -677,7 +805,7 @@ async function handleStaffInfo(interaction) {
             new ButtonBuilder()
                 .setCustomId("show-retired-staff")
                 .setLabel("Show Retired Staff")
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Secondary),
         );
         await interaction.followUp({
             content,
@@ -698,14 +826,14 @@ function resetPlaceholder(interaction, targetCustomId) {
                 if (component.customId === targetCustomId) {
                     const originalItem = menuData.find((item) =>
                         item.components?.some(
-                            (comp) => comp.custom_id === targetCustomId
-                        )
+                            (comp) => comp.custom_id === targetCustomId,
+                        ),
                     );
                     const originalComp = originalItem?.components?.find(
-                        (comp) => comp.custom_id === targetCustomId
+                        (comp) => comp.custom_id === targetCustomId,
                     );
                     newMenu.setPlaceholder(
-                        originalComp?.placeholder || "Select an option"
+                        originalComp?.placeholder || "Select an option",
                     );
                 }
                 newRow.addComponents(newMenu);

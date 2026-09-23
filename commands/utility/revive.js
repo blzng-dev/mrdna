@@ -14,14 +14,38 @@ const BYPASS_ROLES = ["855954434935619584"];
 
 const channelCooldowns = new Map();
 
+const STRINGS = {
+    command: {
+        name: "revive",
+        description: "Pings the chat role with a topic to discuss",
+        topicDescription: "The topic to discuss",
+    },
+    errors: {
+        noMentions: "Please send the command again without any mentions.",
+        generic: "There was an error sending the message.",
+    },
+    cooldown: {
+        bypassActive: (timeLeft) => `Command bypass on cooldown. Next revive <t:${timeLeft}:R>`,
+        standardActive: (globalTime, bypassStatus) => `Command is on cooldown. Next revive <t:${globalTime}:R>\n-# Server boosters get a shorter cooldown, next revive ${bypassStatus}`,
+        availableNow: "**Available Now**",
+    },
+    buttons: {
+        toggleRole: "Toggle Revive Notifications",
+    },
+    messages: {
+        revivePrompt: (roleId, topic) => `<@&${roleId}> discuss: ${topic}\n-# if you don't want to get pinged, click the button below`,
+        logLinkDetected: (userId, channelStr, topic) => `**Chat Revive Link Detected**\n**User:** <@${userId}> (${userId})\n**Channel:** ${channelStr}\n**Content:** ${topic}`,
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("revive")
-        .setDescription("Pings the chat role with a topic to discuss")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addStringOption((option) =>
             option
                 .setName("topic")
-                .setDescription("The topic to discuss")
+                .setDescription(STRINGS.command.topicDescription)
                 .setMinLength(24)
                 .setRequired(true),
         ),
@@ -34,8 +58,7 @@ module.exports = {
             const pingPatterns = [/@everyone/, /@here/, /<@&?\d+>/];
             if (pingPatterns.some((p) => p.test(topic))) {
                 return interaction.reply({
-                    content:
-                        "Please send the command again without any mentions.",
+                    content: STRINGS.errors.noMentions,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -58,7 +81,7 @@ module.exports = {
                             cooldownData.bypassUnlock / 1000,
                         );
                         return interaction.reply({
-                            content: `Command bypass on cooldown. Next revive <t:${timeLeft}:R>`,
+                            content: STRINGS.cooldown.bypassActive(timeLeft),
                             flags: MessageFlags.Ephemeral,
                         });
                     }
@@ -73,10 +96,10 @@ module.exports = {
                     const bypassStatus =
                         now < cooldownData.bypassUnlock
                             ? `<t:${bypassTime}:R>`
-                            : "**Available Now**";
+                            : STRINGS.cooldown.availableNow;
 
                     return interaction.reply({
-                        content: `Command is on cooldown. Next revive <t:${globalTime}:R>\n-# Server boosters get a shorter cooldown, next revive ${bypassStatus}`,
+                        content: STRINGS.cooldown.standardActive(globalTime, bypassStatus),
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -91,7 +114,7 @@ module.exports = {
             if (linkRegex.test(topic)) {
                 const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
                 if (logChannel) {
-                    const logMsg = `**Chat Revive Link Detected**\n**User:** <@${user.id}> (${user.id})\n**Channel:** ${channel.toString()}\n**Content:** ${topic}`;
+                    const logMsg = STRINGS.messages.logLinkDetected(user.id, channel.toString(), topic);
                     await logChannel.send({ content: logMsg });
                 }
             }
@@ -99,19 +122,19 @@ module.exports = {
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId("toggle_revive_role")
-                    .setLabel("Toggle Revive Notifications")
+                    .setLabel(STRINGS.buttons.toggleRole)
                     .setStyle(ButtonStyle.Primary),
             );
 
             await interaction.reply({
-                content: `<@&${REVIVE_ROLE_ID}> discuss: ${topic}\n-# if you don't want to get pinged, click the button below`,
+                content: STRINGS.messages.revivePrompt(REVIVE_ROLE_ID, topic),
                 components: [row],
                 allowedMentions: { roles: [REVIVE_ROLE_ID] },
             });
         } catch (error) {
             console.error("Error in revive command:", error);
             await interaction.reply({
-                content: "There was an error sending the message.",
+                content: STRINGS.errors.generic,
                 flags: MessageFlags.Ephemeral,
             });
         }

@@ -13,20 +13,36 @@ async function getEmojiCollection(client, force = false) {
 }
 
 function matchEmoji(client, name) {
-    const appEmojis = client.application?.emojis?.cache;
-    if (appEmojis && appEmojis.size > 0) {
-        const found = appEmojis.find(e => e.name === name) || appEmojis.find(e => e.name.toLowerCase() === name.toLowerCase());
-        if (found) return found;
+    if (!name) return null;
+    const lowerName = name.toLowerCase();
+
+    function searchCache(cache) {
+        if (!cache) return null;
+        if (typeof cache.find === 'function') {
+            return cache.find(e => e.name === name) || cache.find(e => e.name?.toLowerCase() === lowerName) || null;
+        }
+        let caseInsensitiveMatch = null;
+        const iterable = typeof cache.values === 'function' ? cache.values() : (Array.isArray(cache) ? cache : []);
+        for (const e of iterable) {
+            if (e && e.name === name) return e;
+            if (e && !caseInsensitiveMatch && e.name?.toLowerCase() === lowerName) {
+                caseInsensitiveMatch = e;
+            }
+        }
+        return caseInsensitiveMatch;
     }
-    if (client.emojis && client.emojis.cache.size > 0) {
-        const found = client.emojis.cache.find(e => e.name === name) || client.emojis.cache.find(e => e.name.toLowerCase() === name.toLowerCase());
-        if (found) return found;
-    }
+
+    const appFound = searchCache(client.application?.emojis?.cache);
+    if (appFound) return appFound;
+
+    const guildFound = searchCache(client.emojis?.cache);
+    if (guildFound) return guildFound;
+
     return null;
 }
 
 async function resolveEmojisInText(client, text) {
-    if (!text || !text.includes(':')) return text;
+    if (!text || typeof text !== 'string' || !text.includes(':')) return text;
 
     await getEmojiCollection(client, false);
 
@@ -49,6 +65,77 @@ async function resolveEmojisInText(client, text) {
         }
         return match;
     });
+}
+
+const IGNORED_KEYS = new Set([
+    'custom_id',
+    'customId',
+    'id',
+    'token',
+    'nonce',
+    'url',
+    'icon_url',
+    'proxy_url',
+    'avatar_url',
+    'banner_url',
+    'webhook_id',
+    'emoji'
+]);
+
+async function resolveEmojisInPayload(client, obj, key = null, parent = null) {
+    if (obj === null || obj === undefined) return obj;
+
+    if (typeof obj === 'string') {
+        if (key && IGNORED_KEYS.has(key)) return obj;
+        if (key === 'value' && parent && parent.label !== undefined) return obj;
+        if (key === 'name' && parent && parent.id !== undefined && parent.value === undefined) return obj;
+
+        return await resolveEmojisInText(client, obj);
+    }
+
+    if (Array.isArray(obj)) {
+        for (let i = 0; i < obj.length; i++) {
+            obj[i] = await resolveEmojisInPayload(client, obj[i], null, obj);
+        }
+        return obj;
+    }
+
+    if (typeof obj === 'object') {
+        for (const k of Object.keys(obj)) {
+            if (IGNORED_KEYS.has(k)) continue;
+            obj[k] = await resolveEmojisInPayload(client, obj[k], k, obj);
+        }
+        return obj;
+    }
+
+    return obj;
+}
+
+function isMessageRoute(route) {
+    if (!route || typeof route !== 'string') return false;
+    return (
+        route.includes('/messages') ||
+        route.includes('/callback') ||
+        route.includes('/webhooks/') ||
+        route.includes('/threads')
+    );
+}
+
+function attachEmojiResolver(client) {
+    if (!client || !client.rest || client._emojiResolverAttached) return;
+    client._emojiResolverAttached = true;
+
+    const originalRequest = client.rest.request.bind(client.rest);
+    client.rest.request = async function (options) {
+        if (options && options.body && isMessageRoute(options.fullRoute)) {
+            try {
+                await resolveEmojisInPayload(client, options.body);
+            } catch (err) {
+                console.error('Error resolving emojis in REST payload:', err);
+            }
+        }
+        return originalRequest(options);
+    };
 }
 
 async function findEmojiByNameOrId(client, input) {
@@ -89,8 +176,55 @@ async function findEmojiByNameOrId(client, input) {
     return { name: cleanName };
 }
 
+function wrapInteraction(interaction) {
+    if (!interaction || interaction._emojisWrapped) return interaction;
+    interaction._emojisWrapped = true;
+
+    const client = interaction.client;
+
+    if (typeof interaction.reply === 'function') {
+        const origReply = interaction.reply.bind(interaction);
+        interaction.reply = async function (options) {
+            const formatted = await resolveEmojisInPayload(client, options);
+            return origReply(formatted);
+        };
+    }
+
+    if (typeof interaction.editReply === 'function') {
+        const origEdit = interaction.editReply.bind(interaction);
+        interaction.editReply = async function (options) {
+            const formatted = await resolveEmojisInPayload(client, options);
+            return origEdit(formatted);
+        };
+    }
+
+    if (typeof interaction.followUp === 'function') {
+        const origFollowUp = interaction.followUp.bind(interaction);
+        interaction.followUp = async function (options) {
+            const formatted = await resolveEmojisInPayload(client, options);
+            return origFollowUp(formatted);
+        };
+    }
+
+    if (typeof interaction.update === 'function') {
+        const origUpdate = interaction.update.bind(interaction);
+        interaction.update = async function (options) {
+            const formatted = await resolveEmojisInPayload(client, options);
+            return origUpdate(formatted);
+        };
+    }
+
+    return interaction;
+}
+
 module.exports = {
     resolveEmojisInText,
+    resolveEmojisInPayload,
+    resolveEmojisInObject: resolveEmojisInPayload,
+    formatEmojisInString: resolveEmojisInText,
+    formatPayload: resolveEmojisInPayload,
+    wrapInteraction,
+    attachEmojiResolver,
     findEmojiByNameOrId,
     getEmojiCollection
 };

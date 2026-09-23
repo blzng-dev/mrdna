@@ -14,23 +14,27 @@ module.exports = {
         .addBooleanOption((option) =>
             option
                 .setName("public")
-                .setDescription("Send as a public message? (Default: False)")
+                .setDescription("Send as a public message? (Default: False)"),
         )
         .addIntegerOption((option) =>
             option
                 .setName("days")
                 .setDescription("Days to look back (default: 14)")
-                .setMinValue(1)
+                .setMinValue(1),
         )
         .addUserOption((option) =>
             option
                 .setName("staff")
-                .setDescription("Specific staff member to check activity for (Admin only)")
+                .setDescription(
+                    "Specific staff member to check activity for (Admin only)",
+                ),
         )
         .addBooleanOption((option) =>
             option
                 .setName("all")
-                .setDescription("Generate a global report for all staff members (Admin only)")
+                .setDescription(
+                    "Generate a global report for all staff members (Admin only)",
+                ),
         ),
 
     async execute(interaction) {
@@ -45,7 +49,9 @@ module.exports = {
 
         try {
             const days = interaction.options.getInteger("days") || 14;
-            const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+            const isAdmin = interaction.member.permissions.has(
+                PermissionFlagsBits.Administrator,
+            );
             const staffMention = interaction.options.getUser("staff");
             const isAll = interaction.options.getBoolean("all") || false;
 
@@ -59,15 +65,16 @@ module.exports = {
                 }
             }
 
-            const { messageContent, attachment, error } = await generateStaffReport(
-                interaction.client,
-                interaction.guild.id,
-                days,
-                targetUser
-            );
+            const { messageContent, attachment, error } =
+                await generateStaffReport(
+                    interaction.client,
+                    interaction.guild.id,
+                    days,
+                    targetUser,
+                );
 
             if (error) {
-                return interaction.editReply(`❌ ${error}`);
+                return interaction.editReply(`:x_: ${error}`);
             }
 
             const payload = { content: messageContent };
@@ -76,15 +83,19 @@ module.exports = {
             }
 
             await interaction.editReply(payload);
-
         } catch (err) {
             console.error(err);
             if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: "❌ An error occurred while generating the report.", flags: MessageFlags.Ephemeral });
+                await interaction.reply({
+                    content:
+                        ":x_: An error occurred while generating the report.",
+                    flags: MessageFlags.Ephemeral,
+                });
             } else {
-                await interaction.editReply("❌ An error occurred while generating the report.");
+                await interaction.editReply(
+                    ":x_: An error occurred while generating the report.",
+                );
             }
         }
     },
 };
-

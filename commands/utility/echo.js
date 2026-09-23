@@ -16,28 +16,56 @@ const forbiddenPatterns = [
     /r[e3]t[a@]rd/i,
 ];
 
+const STRINGS = {
+    command: {
+        name: "echo",
+        description: "repeats your message",
+        optionMessageDescription: "The message to send",
+        optionReplyToDescription: "Message ID or link to reply to",
+        optionOverrideDescription: "Admin code to bypass certain filters or to enable replying.",
+    },
+    errors: {
+        emptyMessage: "Cannot send an empty message!",
+        forbiddenMention: (name) => `Your message contains a forbidden ${name}, which is not allowed under any circumstances.`,
+        userMentionForbidden: "Your message contains a user mention, which is not allowed.",
+        forbiddenPattern: "Your message contains a forbidden word or pattern.",
+        noReplyPermission: "You don't have permissions to use this option",
+        replyTargetNotFound: "Could not find the message to reply to. Please check the ID or link.",
+        genericSendError: "There was an error while sending the message!",
+    },
+    messages: {
+        sentSuccess: "Message sent!",
+        logFormat: (username, channelStr, content, sentUrl, replyUrl) => {
+            const replyInfo = replyUrl ? `\n-# In reply to: ${replyUrl}` : "";
+            return [
+                `**${username}** sent a message in ${channelStr}:`,
+                `> ${content}`,
+                `-# Jump to sent message: ${sentUrl}${replyInfo}`,
+            ].join("\n");
+        },
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("echo")
-        .setDescription("repeats your message")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addStringOption((option) =>
             option
                 .setName("message")
-                .setDescription("The message to send")
+                .setDescription(STRINGS.command.optionMessageDescription)
                 .setRequired(true)
         )
         .addStringOption((option) =>
             option
                 .setName("reply_to")
-                .setDescription("Message ID or link to reply to")
+                .setDescription(STRINGS.command.optionReplyToDescription)
                 .setRequired(false)
         )
         .addStringOption((option) =>
             option
                 .setName("override_code")
-                .setDescription(
-                    "Admin code to bypass certain filters or to enable replying."
-                )
+                .setDescription(STRINGS.command.optionOverrideDescription)
                 .setRequired(false)
         ),
 
@@ -53,7 +81,7 @@ module.exports = {
 
         if (!messageContent.trim()) {
             return interaction.editReply({
-                content: "Cannot send an empty message!",
+                content: STRINGS.errors.emptyMessage,
             });
         }
 
@@ -67,7 +95,7 @@ module.exports = {
         for (const { pattern, name } of alwaysForbiddenPatterns) {
             if (pattern.test(messageContent)) {
                 return interaction.editReply({
-                    content: `Your message contains a forbidden ${name}, which is not allowed under any circumstances.`,
+                    content: STRINGS.errors.forbiddenMention(name),
                 });
             }
         }
@@ -75,12 +103,12 @@ module.exports = {
         if (!hasOverride) {
             if (/<@\d+>/.test(messageContent)) {
                 return interaction.editReply({
-                    content: `Your message contains a user mention, which is not allowed.`,
+                    content: STRINGS.errors.userMentionForbidden,
                 });
             }
             if (hasForbiddenContent(messageContent, forbiddenPatterns)) {
                 return interaction.editReply({
-                    content: `Your message contains a forbidden word or pattern.`,
+                    content: STRINGS.errors.forbiddenPattern,
                 });
             }
         }
@@ -90,7 +118,7 @@ module.exports = {
         if (replyToInput) {
             if (!hasOverride) {
                 return interaction.editReply({
-                    content: "You don't have permissions to use this option",
+                    content: STRINGS.errors.noReplyPermission,
                 });
             }
             targetMessage = await findMessage(
@@ -99,8 +127,7 @@ module.exports = {
             );
             if (!targetMessage) {
                 return interaction.editReply({
-                    content:
-                        "Could not find the message to reply to. Please check the ID or link.",
+                    content: STRINGS.errors.replyTargetNotFound,
                 });
             }
         }
@@ -122,7 +149,7 @@ module.exports = {
             }
 
             await interaction.editReply({
-                content: "Message sent!",
+                content: STRINGS.messages.sentSuccess,
             });
 
             await sendLogMessage(
@@ -135,7 +162,7 @@ module.exports = {
             console.error("Error in echo command:", error);
             await interaction
                 .editReply({
-                    content: "There was an error while sending the message!",
+                    content: STRINGS.errors.genericSendError,
                 })
                 .catch(console.error); // Fallback catch
         }
@@ -190,17 +217,13 @@ async function sendLogMessage(
         );
         if (!logChannel || !logChannel.isTextBased()) return;
 
-        const replyInfo = repliedMessage
-            ? `\n-# In reply to: ${repliedMessage.url}`
-            : "";
-
-        const logMessage = [
-            `**${
-                interaction.user.username
-            }** sent a message in ${interaction.channel.toString()}:`,
-            `> ${content}`,
-            `-# Jump to sent message: ${sentMessage.url}${replyInfo}`,
-        ].join("\n");
+        const logMessage = STRINGS.messages.logFormat(
+            interaction.user.username,
+            interaction.channel.toString(),
+            content,
+            sentMessage.url,
+            repliedMessage?.url
+        );
 
         await logChannel.send(logMessage);
     } catch (error) {

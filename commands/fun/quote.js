@@ -1,21 +1,36 @@
 const { SlashCommandBuilder } = require("discord.js");
 const db = require("../../db.js");
 
+const STRINGS = {
+    command: {
+        name: "quote",
+        description: "replies with a server quote",
+    },
+    errors: {
+        noneFound: "No quotes found in the database.",
+        generic: "An error occurred while fetching the quote.",
+    },
+    messages: {
+        quoteStandard: (text, link) => `${text}\n-# jump to [original message](${link})`,
+        quoteWithReply: (text, link, reply) => `${text}\n-# jump to [original message](${link}) | replied to:\n-# > ${reply}`,
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("quote")
-        .setDescription("replies with a server quote"),
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description),
     async execute(interaction) {
         await interaction.deferReply();
 
         try {
             const result = await db.query(
-                "SELECT * FROM quotes ORDER BY RANDOM() LIMIT 1"
+                "SELECT * FROM fun.quotes ORDER BY RANDOM() LIMIT 1"
             );
 
             if (result.rows.length === 0) {
                 return interaction.editReply(
-                    "No quotes found in the database."
+                    STRINGS.errors.noneFound
                 );
             }
 
@@ -23,9 +38,9 @@ module.exports = {
             let quote;
 
             if (!quoteObj.reply) {
-                quote = `${quoteObj.text}\n-# jump to [original message](${quoteObj.link})`;
+                quote = STRINGS.messages.quoteStandard(quoteObj.text, quoteObj.link);
             } else {
-                quote = `${quoteObj.text}\n-# jump to [original message](${quoteObj.link}) | replied to:\n-# > ${quoteObj.reply}`;
+                quote = STRINGS.messages.quoteWithReply(quoteObj.text, quoteObj.link, quoteObj.reply);
             }
 
             await interaction.editReply({
@@ -35,7 +50,7 @@ module.exports = {
         } catch (error) {
             console.error(error);
             await interaction.editReply(
-                "An error occurred while fetching the quote."
+                STRINGS.errors.generic
             );
         }
     },

@@ -16,25 +16,244 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const STAFF_ROLE_ID = "857990235194261514";
 const LOG_CHANNEL_ID = "1461971930880938129";
-const QUOTES_TABLE = "quotes";
-const PROPERTIES_TABLE = "wordle_properties"; // Formerly categories
+const QUOTES_TABLE = "fun.quotes";
+const PROPERTIES_TABLE = "wordle.properties";
 const MULTI_SELECT_OPTION = "➕ Select Multiple...";
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-const EMOJIS = {
-    CHECKMARK: "<:checkmark:1462055059197137069>",
-    CROSS: "<:x_:1462055048526954611>",
-    HAZARD: "<:hazard:1462056327378501738>",
-    CATEGORY_ADD: "<:categoryadd:1459169340002668780>", // Reusing emoji
-    CATEGORY: "<:category:1459169337641275497>",
-    AI: "🤖",
+const STRINGS = {
+    command: {
+        name: "manage",
+        description: "Manage Quotes and Wordle Databases",
+        subcommands: {
+            quotesAdd: {
+                name: "quotes-add",
+                description: "Add a quote",
+                options: {
+                    link: { name: "link", description: "Message link" },
+                    reply: { name: "reply", description: "Include reply?" },
+                },
+            },
+            quotesEdit: {
+                name: "quotes-edit",
+                description: "Edit quote reply status",
+                options: {
+                    link: { name: "link", description: "Message link" },
+                    showReply: {
+                        name: "show_reply",
+                        description: "Show reply context?",
+                    },
+                },
+            },
+            quotesRemove: {
+                name: "quotes-remove",
+                description: "Remove a quote",
+                options: {
+                    link: { name: "link", description: "Message link" },
+                },
+            },
+            quotesExport: {
+                name: "quotes-export",
+                description: "Export quotes JSON",
+            },
+            wordleBulkAdd: {
+                name: "wordle-bulk-add",
+                description: "Paste a list of words. AI will fill details.",
+                options: {
+                    database: {
+                        name: "database",
+                        description: "Target Database",
+                    },
+                },
+            },
+            wordleAdd: {
+                name: "wordle-add",
+                description: "Add a single word (AI Autofill)",
+                options: {
+                    database: {
+                        name: "database",
+                        description: "Target Database",
+                    },
+                    word: { name: "word", description: "The word" },
+                },
+            },
+            wordleEdit: {
+                name: "wordle-edit",
+                description: "Edit a word entry",
+                options: {
+                    database: {
+                        name: "database",
+                        description: "Target Database",
+                    },
+                    targetWord: {
+                        name: "target_word",
+                        description: "Word to find",
+                    },
+                    newWord: { name: "new_word", description: "New spelling" },
+                    editProperties: {
+                        name: "edit_properties",
+                        description: "Open JSON editor modal?",
+                    },
+                },
+            },
+            wordleRemove: {
+                name: "wordle-remove",
+                description: "Remove a word",
+                options: {
+                    database: {
+                        name: "database",
+                        description: "Target Database",
+                    },
+                    targetWord: {
+                        name: "target_word",
+                        description: "Word to remove",
+                    },
+                },
+            },
+            wordleExport: {
+                name: "wordle-export",
+                description: "Export database",
+                options: {
+                    database: { name: "database", description: "Target DB" },
+                },
+            },
+            wordleImport: {
+                name: "wordle-import",
+                description: "Import JSON file (Upsert)",
+                options: {
+                    database: { name: "database", description: "Target DB" },
+                    file: { name: "file", description: "The JSON file" },
+                },
+            },
+            wordlePropertiesFill: {
+                name: "wordle-properties-fill",
+                description:
+                    "Auto-fill properties for words that have none (via AI)",
+                options: {
+                    database: { name: "database", description: "Target DB" },
+                },
+            },
+            wordlePropertyAdd: {
+                name: "wordle-property-add",
+                description: "Add a known property value",
+                options: {
+                    database: {
+                        name: "database",
+                        description: "Target Database",
+                    },
+                    property: {
+                        name: "property",
+                        description: "Value (e.g. 'Theropod')",
+                    },
+                    type: {
+                        name: "type",
+                        description: "Type (e.g. 'type', 'diet')",
+                    },
+                },
+            },
+            wordlePropertyRemove: {
+                name: "wordle-property-remove",
+                description: "Remove a known property",
+                options: {
+                    database: {
+                        name: "database",
+                        description: "Target Database",
+                    },
+                    property: { name: "property", description: "Value" },
+                },
+            },
+        },
+    },
+    emojis: {
+        CHECKMARK: ":checkmark:",
+        CROSS: ":x_:",
+        HAZARD: ":hazard:",
+        CATEGORY_ADD: ":categoryadd:",
+        CATEGORY: ":category:",
+        AI: "🤖",
+    },
+    modals: {
+        bulkAddTitle: (dbChoice) => `Bulk Add (${dbChoice})`,
+        bulkAddLabel: "Paste words (AI will fill details)",
+        bulkRemoveTitle: (dbChoice) => `Bulk Remove (${dbChoice})`,
+        bulkRemoveLabel: "Paste words to remove",
+        editPropsTitle: (target) => `Edit Properties: ${target}`,
+        editPropsLabel: "JSON Properties",
+    },
+    errors: {
+        permissionDenied: ":x_: Permission Denied.",
+        wordAlreadyExists: (word) => `:hazard: **${word}** already exists.`,
+        wordNotFound: (target) => `:x_: Word **${target}** not found.`,
+        invalidJson: ":x_: Invalid JSON format. Update cancelled.",
+        editSpecifyRequired:
+            ":info: Please specify a new word OR set `edit_properties` to True.",
+        propertyAddError: ":x_: Error (likely duplicate).",
+        notJsonFile: "Not a JSON file.",
+        jsonMustBeArray: "JSON must be array.",
+        importFailed: "Import failed.",
+        invalidDiscordLink: ":x_: Invalid Discord Message Link.",
+        quoteAlreadyExists: ":warning: Quote already exists.",
+        cannotAccessChannel: ":x_: Cannot access channel.",
+        cannotFindMessage: ":x_: Cannot find message.",
+        quoteNotFound: ":warning: Quote not found.",
+        quoteNotFoundErr: ":x_: Quote not found.",
+        messageHasNoReply: ":x_: This message has no reply.",
+        bulkAddNoWords: ":x_: No valid words found.",
+        bulkAddDbError: ":hazard: Database error checking existing words.",
+    },
+    messages: {
+        generatingProps: (word) =>
+            `🤖 Generating properties for **${word}**...`,
+        wordAdded: (word, dbChoice, propsJson) =>
+            `:checkmark: Added **${word}** to ${dbChoice}.\n🤖 Properties:\n\`\`\`json\n${propsJson}\n\`\`\``,
+        updatedWordProps: (word) =>
+            `:checkmark: Updated **${word}** properties.`,
+        renamedWord: (oldWord, newWord) =>
+            `:checkmark: Renamed **${oldWord}** to **${newWord}**.`,
+        wordRemoved: (target) => `:checkmark: Removed **${target}**.`,
+        propertyAdded: (prop, type) =>
+            `:checkmark: Added property **${prop}** (${type}).`,
+        propertyRemoved: (prop) => `:checkmark: Removed property **${prop}**.`,
+        exportHeader: (dbChoice) => `**${dbChoice}** Export:`,
+        importedItems: (count) => `:checkmark: Imported ${count} items.`,
+        noEmptyPropertyWords: (dbChoice) =>
+            `:checkmark: No empty property words found in **${dbChoice}**.`,
+        batchProcessStart: (count, batches) =>
+            `🤖 Found ${count} words to fill. Processing in ${batches} batches...`,
+        batchProcessProgress: (current, total, count) =>
+            `🤖 Filled batch ${current}/${total}... (Total: ${count})`,
+        autoFillDone: (count) =>
+            `:checkmark: Done! Auto-filled properties for **${count}** words.`,
+        quotesBackup: ":category: Quotes Backup:",
+        quoteAdded: (content) => `:checkmark: Quote added!\n> ${content}`,
+        quoteDeleted: ":checkmark: Quote removed.",
+        quoteUpdated: ":checkmark: Quote updated.",
+        bulkAddAllExist: (count) =>
+            `:checkmark: All **${count}** words already exist in the database! No action needed.`,
+        bulkAddProcessing: (newCount, skippedCount, batches) =>
+            `🤖 Found **${newCount}** new words (Skipped ${skippedCount} existing). Processing in ${batches} batches...`,
+        bulkAddBatchProgress: (current, total, addedCount) =>
+            `🤖 Processed batch ${current}/${total}... (Added so far: ${addedCount})`,
+        bulkAddDone: (addedCount, skippedCount, errorCount) =>
+            `:checkmark: Done. Added: **${addedCount}**. Skipped (Existing): **${skippedCount}**. Errors: ${errorCount}\n\n:hazard: **Disclaimer:** Properties are AI-generated & may not be 100% accurate especially for recent movies/shows (Rebirth and Chaos Theory). Please review important entries manually from the json in <#1461971930880938129>.`,
+        bulkRemoveDone: (count) => `:checkmark: Removed ${count} words.`,
+        logQuotesAdded: "Quote added",
+        logQuotesDeleted: "Quote deleted",
+        logQuotesEdited: "Quote edited",
+        logWordleAdded: (dbChoice) => `Wordle entry added (${dbChoice})`,
+        logWordleRemoved: (target) => `Removed ${target}`,
+        logBulkAdd: (dbChoice) => `Bulk Add (${dbChoice})`,
+        logBulkAddFile: "Bulk Add Log",
+    },
 };
 
+const EMOJIS = STRINGS.emojis;
+
 function getTable(choice) {
-    return choice === "paleo" ? "wordle_paleo" : "wordle_jurassic";
+    return choice === "paleo" ? "wordle.paleo" : "wordle.jurassic";
 }
 
 function normalizeLink(link) {
@@ -173,69 +392,117 @@ async function updateGlobalProperties(database, propertiesJson) {
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("manage")
-        .setDescription("Manage Quotes and Wordle Databases")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 
         // --- QUOTES (Standard) ---
         .addSubcommand((sub) =>
             sub
-                .setName("quotes-add")
-                .setDescription("Add a quote")
+                .setName(STRINGS.command.subcommands.quotesAdd.name)
+                .setDescription(
+                    STRINGS.command.subcommands.quotesAdd.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("link")
-                        .setDescription("Message link")
+                        .setName(
+                            STRINGS.command.subcommands.quotesAdd.options.link
+                                .name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.quotesAdd.options.link
+                                .description,
+                        )
                         .setRequired(true),
                 )
                 .addBooleanOption((o) =>
                     o
-                        .setName("reply")
-                        .setDescription("Include reply?")
+                        .setName(
+                            STRINGS.command.subcommands.quotesAdd.options.reply
+                                .name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.quotesAdd.options.reply
+                                .description,
+                        )
                         .setRequired(true),
                 ),
         )
         .addSubcommand((sub) =>
             sub
-                .setName("quotes-edit")
-                .setDescription("Edit quote reply status")
+                .setName(STRINGS.command.subcommands.quotesEdit.name)
+                .setDescription(
+                    STRINGS.command.subcommands.quotesEdit.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("link")
-                        .setDescription("Message link")
+                        .setName(
+                            STRINGS.command.subcommands.quotesEdit.options.link
+                                .name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.quotesEdit.options.link
+                                .description,
+                        )
                         .setRequired(true),
                 )
                 .addBooleanOption((o) =>
                     o
-                        .setName("show_reply")
-                        .setDescription("Show reply context?")
+                        .setName(
+                            STRINGS.command.subcommands.quotesEdit.options
+                                .showReply.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.quotesEdit.options
+                                .showReply.description,
+                        )
                         .setRequired(true),
                 ),
         )
         .addSubcommand((sub) =>
             sub
-                .setName("quotes-remove")
-                .setDescription("Remove a quote")
+                .setName(STRINGS.command.subcommands.quotesRemove.name)
+                .setDescription(
+                    STRINGS.command.subcommands.quotesRemove.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("link")
-                        .setDescription("Message link")
+                        .setName(
+                            STRINGS.command.subcommands.quotesRemove.options
+                                .link.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.quotesRemove.options
+                                .link.description,
+                        )
                         .setRequired(true),
                 ),
         )
         .addSubcommand((sub) =>
-            sub.setName("quotes-export").setDescription("Export quotes JSON"),
+            sub
+                .setName(STRINGS.command.subcommands.quotesExport.name)
+                .setDescription(
+                    STRINGS.command.subcommands.quotesExport.description,
+                ),
         )
 
         // --- WORDLE: BULK ADD ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-bulk-add")
-                .setDescription("Paste a list of words. AI will fill details.")
+                .setName(STRINGS.command.subcommands.wordleBulkAdd.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordleBulkAdd.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target Database")
+                        .setName(
+                            STRINGS.command.subcommands.wordleBulkAdd.options
+                                .database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleBulkAdd.options
+                                .database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -246,12 +513,20 @@ module.exports = {
         // --- WORDLE: ADD (Single) ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-add")
-                .setDescription("Add a single word (AI Autofill)")
+                .setName(STRINGS.command.subcommands.wordleAdd.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordleAdd.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target Database")
+                        .setName(
+                            STRINGS.command.subcommands.wordleAdd.options
+                                .database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleAdd.options
+                                .database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -260,20 +535,34 @@ module.exports = {
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("word")
-                        .setDescription("The word")
+                        .setName(
+                            STRINGS.command.subcommands.wordleAdd.options.word
+                                .name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleAdd.options.word
+                                .description,
+                        )
                         .setRequired(true),
                 ),
         )
         // --- WORDLE: EDIT ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-edit")
-                .setDescription("Edit a word entry")
+                .setName(STRINGS.command.subcommands.wordleEdit.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordleEdit.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target Database")
+                        .setName(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -282,32 +571,58 @@ module.exports = {
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("target_word")
-                        .setDescription("Word to find")
+                        .setName(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .targetWord.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .targetWord.description,
+                        )
                         .setRequired(true),
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("new_word")
-                        .setDescription("New spelling")
+                        .setName(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .newWord.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .newWord.description,
+                        )
                         .setRequired(false),
                 )
                 .addBooleanOption((o) =>
                     o
-                        .setName("edit_properties")
-                        .setDescription("Open JSON editor modal?")
+                        .setName(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .editProperties.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleEdit.options
+                                .editProperties.description,
+                        )
                         .setRequired(false),
                 ),
         )
         // --- WORDLE: REMOVE ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-remove")
-                .setDescription("Remove a word")
+                .setName(STRINGS.command.subcommands.wordleRemove.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordleRemove.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target Database")
+                        .setName(
+                            STRINGS.command.subcommands.wordleRemove.options
+                                .database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleRemove.options
+                                .database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -316,20 +631,34 @@ module.exports = {
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("target_word")
-                        .setDescription("Word to remove")
+                        .setName(
+                            STRINGS.command.subcommands.wordleRemove.options
+                                .targetWord.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleRemove.options
+                                .targetWord.description,
+                        )
                         .setRequired(true),
                 ),
         )
         // --- WORDLE: EXPORT/IMPORT ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-export")
-                .setDescription("Export database")
+                .setName(STRINGS.command.subcommands.wordleExport.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordleExport.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target DB")
+                        .setName(
+                            STRINGS.command.subcommands.wordleExport.options
+                                .database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleExport.options
+                                .database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -339,12 +668,20 @@ module.exports = {
         )
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-import")
-                .setDescription("Import JSON file (Upsert)")
+                .setName(STRINGS.command.subcommands.wordleImport.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordleImport.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target DB")
+                        .setName(
+                            STRINGS.command.subcommands.wordleImport.options
+                                .database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleImport.options
+                                .database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -353,22 +690,35 @@ module.exports = {
                 )
                 .addAttachmentOption((o) =>
                     o
-                        .setName("file")
-                        .setDescription("The JSON file")
+                        .setName(
+                            STRINGS.command.subcommands.wordleImport.options
+                                .file.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordleImport.options
+                                .file.description,
+                        )
                         .setRequired(true),
                 ),
         )
         // --- WORDLE: AUTO-FILL PROPERTIES (New) ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-properties-fill")
+                .setName(STRINGS.command.subcommands.wordlePropertiesFill.name)
                 .setDescription(
-                    "Auto-fill properties for words that have none (via AI)",
+                    STRINGS.command.subcommands.wordlePropertiesFill
+                        .description,
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target DB")
+                        .setName(
+                            STRINGS.command.subcommands.wordlePropertiesFill
+                                .options.database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordlePropertiesFill
+                                .options.database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -380,12 +730,20 @@ module.exports = {
         // --- PROPERTY MANAGEMENT (Renamed from Category) ---
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-property-add")
-                .setDescription("Add a known property value")
+                .setName(STRINGS.command.subcommands.wordlePropertyAdd.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordlePropertyAdd.description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target Database")
+                        .setName(
+                            STRINGS.command.subcommands.wordlePropertyAdd
+                                .options.database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordlePropertyAdd
+                                .options.database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -394,25 +752,46 @@ module.exports = {
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("property")
-                        .setDescription("Value (e.g. 'Theropod')")
+                        .setName(
+                            STRINGS.command.subcommands.wordlePropertyAdd
+                                .options.property.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordlePropertyAdd
+                                .options.property.description,
+                        )
                         .setRequired(true),
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("type")
-                        .setDescription("Type (e.g. 'type', 'diet')")
+                        .setName(
+                            STRINGS.command.subcommands.wordlePropertyAdd
+                                .options.type.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordlePropertyAdd
+                                .options.type.description,
+                        )
                         .setRequired(true),
                 ),
         )
         .addSubcommand((sub) =>
             sub
-                .setName("wordle-property-remove")
-                .setDescription("Remove a known property")
+                .setName(STRINGS.command.subcommands.wordlePropertyRemove.name)
+                .setDescription(
+                    STRINGS.command.subcommands.wordlePropertyRemove
+                        .description,
+                )
                 .addStringOption((o) =>
                     o
-                        .setName("database")
-                        .setDescription("Target Database")
+                        .setName(
+                            STRINGS.command.subcommands.wordlePropertyRemove
+                                .options.database.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordlePropertyRemove
+                                .options.database.description,
+                        )
                         .setRequired(true)
                         .addChoices(
                             { name: "Jurassic", value: "jurassic" },
@@ -421,8 +800,14 @@ module.exports = {
                 )
                 .addStringOption((o) =>
                     o
-                        .setName("property")
-                        .setDescription("Value")
+                        .setName(
+                            STRINGS.command.subcommands.wordlePropertyRemove
+                                .options.property.name,
+                        )
+                        .setDescription(
+                            STRINGS.command.subcommands.wordlePropertyRemove
+                                .options.property.description,
+                        )
                         .setRequired(true)
                         .setAutocomplete(true),
                 ),
@@ -476,7 +861,7 @@ module.exports = {
 
         if (!isAdmin && !isStaff) {
             return interaction.reply({
-                content: `${EMOJIS.CROSS} Permission Denied.`,
+                content: STRINGS.errors.permissionDenied,
                 flags: MessageFlags.Ephemeral,
             });
         }
@@ -490,10 +875,10 @@ module.exports = {
         if (subcommand === "wordle-bulk-add") {
             const modal = new ModalBuilder()
                 .setCustomId(`bulk_add_${dbChoice}`)
-                .setTitle(`Bulk Add (${dbChoice})`);
+                .setTitle(STRINGS.modals.bulkAddTitle(dbChoice));
             const input = new TextInputBuilder()
                 .setCustomId("words_input")
-                .setLabel(`Paste words (AI will fill details)`)
+                .setLabel(STRINGS.modals.bulkAddLabel)
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -518,10 +903,10 @@ module.exports = {
         if (subcommand === "wordle-bulk-remove") {
             const modal = new ModalBuilder()
                 .setCustomId(`bulk_remove_${dbChoice}`)
-                .setTitle(`Bulk Remove (${dbChoice})`);
+                .setTitle(STRINGS.modals.bulkRemoveTitle(dbChoice));
             const input = new TextInputBuilder()
                 .setCustomId("words_input")
-                .setLabel(`Paste words to remove`)
+                .setLabel(STRINGS.modals.bulkRemoveLabel)
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -552,9 +937,7 @@ module.exports = {
             const tableName = getTable(dbChoice);
 
             // 1. Generate Properties via AI
-            await interaction.editReply(
-                `${EMOJIS.AI} Generating properties for **${word}**...`,
-            );
+            await interaction.editReply(STRINGS.messages.generatingProps(word));
             const properties = await generateProperties(word, dbChoice);
 
             // 2. Insert
@@ -570,17 +953,21 @@ module.exports = {
                 const logObj = { word, properties };
                 await sendLog(
                     interaction,
-                    `Wordle entry added (${dbChoice})`,
+                    STRINGS.messages.logWordleAdded(dbChoice),
                     `\`\`\`json\n${JSON.stringify(logObj, null, 4)}\n\`\`\``,
                 );
 
                 return interaction.editReply({
-                    content: `${EMOJIS.CHECKMARK} Added **${word}** to ${dbChoice}.\n${EMOJIS.AI} Properties:\n\`\`\`json\n${JSON.stringify(properties, null, 2)}\n\`\`\``,
+                    content: STRINGS.messages.wordAdded(
+                        word,
+                        dbChoice,
+                        JSON.stringify(properties, null, 2),
+                    ),
                 });
             } catch (err) {
                 if (err.code === "23505")
                     return interaction.editReply(
-                        `${EMOJIS.HAZARD} **${word}** already exists.`,
+                        STRINGS.errors.wordAlreadyExists(word),
                     );
                 throw err;
             }
@@ -607,7 +994,7 @@ module.exports = {
             );
             if (search.rows.length === 0)
                 return interaction.reply({
-                    content: `${EMOJIS.CROSS} Word **${target}** not found.`,
+                    content: STRINGS.errors.wordNotFound(target),
                     flags: MessageFlags.Ephemeral,
                 });
             const oldRecord = search.rows[0];
@@ -616,11 +1003,11 @@ module.exports = {
             if (wantEditProps) {
                 const modal = new ModalBuilder()
                     .setCustomId(`edit_props_${target}`)
-                    .setTitle(`Edit Properties: ${target}`);
+                    .setTitle(STRINGS.modals.editPropsTitle(target));
 
                 const jsonInput = new TextInputBuilder()
                     .setCustomId("json_data")
-                    .setLabel("JSON Properties")
+                    .setLabel(STRINGS.modals.editPropsLabel)
                     .setStyle(TextInputStyle.Paragraph)
                     .setValue(JSON.stringify(oldRecord.properties, null, 2))
                     .setRequired(true);
@@ -648,7 +1035,7 @@ module.exports = {
                     newProps = JSON.parse(rawJson);
                 } catch (e) {
                     return submission.reply({
-                        content: `${EMOJIS.CROSS} Invalid JSON format. Update cancelled.`,
+                        content: STRINGS.errors.invalidJson,
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -664,7 +1051,7 @@ module.exports = {
                 await updateGlobalProperties(dbChoice, newProps);
 
                 return submission.reply({
-                    content: `${EMOJIS.CHECKMARK} Updated **${finalWord}** properties.`,
+                    content: STRINGS.messages.updatedWordProps(finalWord),
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -680,13 +1067,12 @@ module.exports = {
                     [finalWord, oldRecord.word],
                 );
                 return interaction.editReply(
-                    `${EMOJIS.CHECKMARK} Renamed **${oldRecord.word}** to **${finalWord}**.`,
+                    STRINGS.messages.renamedWord(oldRecord.word, finalWord),
                 );
             }
 
             return interaction.reply({
-                content:
-                    "ℹ️ Please specify a new word OR set `edit_properties` to True.",
+                content: STRINGS.errors.editSpecifyRequired,
                 flags: MessageFlags.Ephemeral,
             });
         }
@@ -706,12 +1092,10 @@ module.exports = {
             );
             await sendLog(
                 interaction,
-                `Removed ${target}`,
+                STRINGS.messages.logWordleRemoved(target),
                 `Deleted by ${interaction.user.username}`,
             );
-            return interaction.editReply(
-                `${EMOJIS.CHECKMARK} Removed **${target}**.`,
-            );
+            return interaction.editReply(STRINGS.messages.wordRemoved(target));
         }
 
         // ------------------------------------------------------------------
@@ -726,12 +1110,10 @@ module.exports = {
                     [prop, dbChoice, type],
                 );
                 return interaction.editReply(
-                    `${EMOJIS.CHECKMARK} Added property **${prop}** (${type}).`,
+                    STRINGS.messages.propertyAdded(prop, type),
                 );
             } catch (err) {
-                return interaction.editReply(
-                    `${EMOJIS.CROSS} Error (likely duplicate).`,
-                );
+                return interaction.editReply(STRINGS.errors.propertyAddError);
             }
         }
 
@@ -742,7 +1124,7 @@ module.exports = {
                 [prop, dbChoice],
             );
             return interaction.editReply(
-                `${EMOJIS.CHECKMARK} Removed property **${prop}**.`,
+                STRINGS.messages.propertyRemoved(prop),
             );
         }
 
@@ -758,7 +1140,7 @@ module.exports = {
                 { name: `${dbChoice}_export.json` },
             );
             return interaction.editReply({
-                content: `**${dbChoice}** Export:`,
+                content: STRINGS.messages.exportHeader(dbChoice),
                 files: [file],
             });
         }
@@ -766,11 +1148,13 @@ module.exports = {
         if (subcommand === "wordle-import") {
             const fileObj = interaction.options.getAttachment("file");
             if (!fileObj.contentType.includes("json"))
-                return interaction.editReply("Not a JSON file.");
+                return interaction.editReply(STRINGS.errors.notJsonFile);
             try {
                 const data = await fetchJson(fileObj.url);
                 if (!Array.isArray(data))
-                    return interaction.editReply("JSON must be array.");
+                    return interaction.editReply(
+                        STRINGS.errors.jsonMustBeArray,
+                    );
 
                 let count = 0;
                 for (const item of data) {
@@ -791,10 +1175,10 @@ module.exports = {
                     count++;
                 }
                 return interaction.editReply(
-                    `${EMOJIS.CHECKMARK} Imported ${count} items.`,
+                    STRINGS.messages.importedItems(count),
                 );
             } catch (e) {
-                return interaction.editReply("Import failed.");
+                return interaction.editReply(STRINGS.errors.importFailed);
             }
         }
 
@@ -813,7 +1197,7 @@ module.exports = {
 
             if (wordsToFill.length === 0) {
                 return interaction.editReply(
-                    `${EMOJIS.CHECKMARK} No empty property words found in **${dbChoice}**.`,
+                    STRINGS.messages.noEmptyPropertyWords(dbChoice),
                 );
             }
 
@@ -825,7 +1209,10 @@ module.exports = {
             }
 
             await interaction.editReply(
-                `${EMOJIS.AI} Found ${wordsToFill.length} words to fill. Processing in ${chunks.length} batches...`,
+                STRINGS.messages.batchProcessStart(
+                    wordsToFill.length,
+                    chunks.length,
+                ),
             );
 
             let updatedCount = 0;
@@ -863,13 +1250,17 @@ module.exports = {
                 }
                 // Update progress
                 await interaction.editReply(
-                    `${EMOJIS.AI} Filled batch ${index + 1}/${chunks.length}... (Total: ${updatedCount})`,
+                    STRINGS.messages.batchProcessProgress(
+                        index + 1,
+                        chunks.length,
+                        updatedCount,
+                    ),
                 );
                 await new Promise((r) => setTimeout(r, 2000));
             }
 
             return interaction.editReply(
-                `${EMOJIS.CHECKMARK} Done! Auto-filled properties for **${updatedCount}** words.`,
+                STRINGS.messages.autoFillDone(updatedCount),
             );
         }
 
@@ -884,7 +1275,7 @@ module.exports = {
                     { name: "quotes_export.json" },
                 );
                 return interaction.editReply({
-                    content: "📂 Quotes Backup:",
+                    content: STRINGS.messages.quotesBackup,
                     files: [file],
                 });
             }
@@ -895,9 +1286,7 @@ module.exports = {
             const channelId = linkParts.pop();
 
             if (!messageId || !channelId)
-                return interaction.editReply(
-                    "❌ Invalid Discord Message Link.",
-                );
+                return interaction.editReply(STRINGS.errors.invalidDiscordLink);
 
             if (subcommand === "quotes-add") {
                 const wantReply = interaction.options.getBoolean("reply");
@@ -906,18 +1295,24 @@ module.exports = {
                     [link],
                 );
                 if (check.rows.length > 0)
-                    return interaction.editReply("⚠️ Quote already exists.");
+                    return interaction.editReply(
+                        STRINGS.errors.quoteAlreadyExists,
+                    );
 
                 const channel = await interaction.client.channels
                     .fetch(channelId)
                     .catch(() => null);
                 if (!channel)
-                    return interaction.editReply("❌ Cannot access channel.");
+                    return interaction.editReply(
+                        STRINGS.errors.cannotAccessChannel,
+                    );
                 const msg = await channel.messages
                     .fetch(messageId)
                     .catch(() => null);
                 if (!msg)
-                    return interaction.editReply("❌ Cannot find message.");
+                    return interaction.editReply(
+                        STRINGS.errors.cannotFindMessage,
+                    );
 
                 let replyText = null;
                 if (wantReply && msg.reference) {
@@ -935,12 +1330,12 @@ module.exports = {
                 const jsonLog = JSON.stringify(res.rows[0], null, 2);
                 await sendLog(
                     interaction,
-                    "Quote added",
+                    STRINGS.messages.logQuotesAdded,
                     `\`\`\`json\n${jsonLog}\n\`\`\``,
                 );
 
                 return interaction.editReply(
-                    `✅ Quote added!\n> ${msg.content}`,
+                    STRINGS.messages.quoteAdded(msg.content),
                 );
             }
 
@@ -950,16 +1345,16 @@ module.exports = {
                     [link],
                 );
                 if (res.rowCount === 0)
-                    return interaction.editReply("⚠️ Quote not found.");
+                    return interaction.editReply(STRINGS.errors.quoteNotFound);
 
                 const jsonLog = JSON.stringify(res.rows[0], null, 2);
                 await sendLog(
                     interaction,
-                    "Quote deleted",
+                    STRINGS.messages.logQuotesDeleted,
                     `\`\`\`json\n${jsonLog}\n\`\`\``,
                 );
 
-                return interaction.editReply("✅ Quote removed.");
+                return interaction.editReply(STRINGS.messages.quoteDeleted);
             }
 
             if (subcommand === "quotes-edit") {
@@ -970,7 +1365,9 @@ module.exports = {
                     [link],
                 );
                 if (oldRes.rows.length === 0)
-                    return interaction.editReply("❌ Quote not found.");
+                    return interaction.editReply(
+                        STRINGS.errors.quoteNotFoundErr,
+                    );
                 const oldRecord = oldRes.rows[0];
 
                 let newReplyContent = null;
@@ -980,7 +1377,7 @@ module.exports = {
                     const msg = await channel.messages.fetch(messageId);
                     if (!msg.reference)
                         return interaction.editReply(
-                            "❌ This message has no reply.",
+                            STRINGS.errors.messageHasNoReply,
                         );
                     const ref = await channel.messages.fetch(
                         msg.reference.messageId,
@@ -1009,10 +1406,10 @@ module.exports = {
 
                 await sendLog(
                     interaction,
-                    "Quote edited",
+                    STRINGS.messages.logQuotesEdited,
                     `\`\`\`diff\n${diff}\n\`\`\``,
                 );
-                return interaction.editReply(`✅ Quote updated.`);
+                return interaction.editReply(STRINGS.messages.quoteUpdated);
             }
         }
     },
@@ -1083,7 +1480,7 @@ async function handleBulkAdd(submission, dbChoice, user) {
     ];
 
     if (allWords.length === 0) {
-        return submission.editReply(`${EMOJIS.CROSS} No valid words found.`);
+        return submission.editReply(STRINGS.errors.bulkAddNoWords);
     }
 
     const tableName = getTable(dbChoice);
@@ -1099,9 +1496,7 @@ async function handleBulkAdd(submission, dbChoice, user) {
         res.rows.forEach((r) => existingWordsSet.add(r.word));
     } catch (err) {
         console.error("Bulk Add Check Error:", err);
-        return submission.editReply(
-            `${EMOJIS.HAZARD} Database error checking existing words.`,
-        );
+        return submission.editReply(STRINGS.errors.bulkAddDbError);
     }
 
     // 3. Filter out existing words
@@ -1109,7 +1504,7 @@ async function handleBulkAdd(submission, dbChoice, user) {
 
     if (newWords.length === 0) {
         return submission.editReply(
-            `${EMOJIS.CHECKMARK} All **${allWords.length}** words already exist in the database! No action needed.`,
+            STRINGS.messages.bulkAddAllExist(allWords.length),
         );
     }
 
@@ -1126,7 +1521,11 @@ async function handleBulkAdd(submission, dbChoice, user) {
     }
 
     await submission.editReply(
-        `${EMOJIS.AI} Found **${newWords.length}** new words (Skipped ${skippedCount} existing). Processing in ${chunks.length} batches...`,
+        STRINGS.messages.bulkAddProcessing(
+            newWords.length,
+            skippedCount,
+            chunks.length,
+        ),
     );
 
     for (const [index, chunk] of chunks.entries()) {
@@ -1187,7 +1586,11 @@ async function handleBulkAdd(submission, dbChoice, user) {
 
         // Progress update per batch
         await submission.editReply(
-            `${EMOJIS.AI} Processed batch ${index + 1}/${chunks.length}... (Added so far: ${added.length})`,
+            STRINGS.messages.bulkAddBatchProgress(
+                index + 1,
+                chunks.length,
+                added.length,
+            ),
         );
 
         // Small safety delay between batches
@@ -1204,7 +1607,7 @@ async function handleBulkAdd(submission, dbChoice, user) {
         if (jsonStr.length < 1900) {
             await sendLog(
                 submission,
-                `Bulk Add (${dbChoice})`,
+                STRINGS.messages.logBulkAdd(dbChoice),
                 `\`\`\`json\n${jsonStr}\n\`\`\``,
             );
         } else {
@@ -1214,12 +1617,16 @@ async function handleBulkAdd(submission, dbChoice, user) {
             const c = await submission.client.channels
                 .fetch(LOG_CHANNEL_ID)
                 .catch(() => null);
-            if (c) c.send({ content: `Bulk Add Log`, files: [file] });
+            if (c)
+                c.send({
+                    content: STRINGS.messages.logBulkAddFile,
+                    files: [file],
+                });
         }
     }
 
     return submission.editReply(
-        `${EMOJIS.CHECKMARK} Done. Added: **${added.length}**. Skipped (Existing): **${skippedCount}**. Errors: ${errors.length}\n\n${EMOJIS.HAZARD} **Disclaimer:** Properties are AI-generated & may not be 100% accurate especially for recent movies/shows (Rebirth and Chaos Theory). Please review important entries manually from the json in <#1461971930880938129>.`,
+        STRINGS.messages.bulkAddDone(added.length, skippedCount, errors.length),
     );
 }
 
@@ -1239,5 +1646,5 @@ async function handleBulkRemove(submission, dbChoice, user) {
         count += res.rowCount;
     }
 
-    return submission.editReply(`${EMOJIS.CHECKMARK} Removed ${count} words.`);
+    return submission.editReply(STRINGS.messages.bulkRemoveDone(count));
 }

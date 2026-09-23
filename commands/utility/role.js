@@ -18,24 +18,94 @@ const ASSIGNABLE_ROLES = [
 
 const ROLE_CATEGORIES = require("../../data/role-categories.js");
 
+const STRINGS = {
+    command: {
+        name: "role",
+        description: "Manage specific roles in the server.",
+        assign: {
+            name: "assign",
+            description: "assigns roles.",
+            userDescription: "The member to assign the role to",
+            roleDescription: "The role to assign",
+        },
+        remove: {
+            name: "remove",
+            description: "Removes roles",
+            userDescription: "The member to remove the role from",
+            roleDescription: "The role to remove",
+        },
+        revoke: {
+            name: "revoke",
+            description:
+                "Revokes gradient/custom roles from unauthorized users.",
+            categoryDescription: "The category of roles to check",
+            actionDescription: "Action to take",
+            visibleDescription:
+                "Post the result publicly in the channel (default: hidden/ephemeral)",
+            choices: {
+                all: "All Categories",
+                list: "List Unauthorized Users",
+                execute: "Execute Revoke",
+            },
+        },
+    },
+    errors: {
+        staffRequired:
+            "You do not have the required Staff role to use this command.",
+        manageRolesRequired:
+            'You need the "Manage Roles" permission to use this command.',
+        invalidRole: "Invalid role selected.",
+        userNotFound: "User not found in this server.",
+        roleNotFound: (name, id) =>
+            `Error: The **${name}** role (ID: ${id}) was not found.`,
+        memberLacksRole: (user, roleName) =>
+            `${user} does not have the **${roleName}** role.`,
+        memberHasRole: (user, roleName) =>
+            `${user} already has the **${roleName}** role.`,
+        invalidCategory: "Invalid category configuration.",
+        boundaryNotFound:
+            "One of the boundary roles could not be found, or no roles exist between the boundaries.",
+        genericError: (msg) => `An error occurred: ${msg}`,
+    },
+    success: {
+        assigned: (roleName, user) =>
+            `:checkmark: Successfully assigned the **${roleName}** role to ${user}.`,
+        removed: (roleName, user) =>
+            `:checkmark: Successfully removed the **${roleName}** role from ${user}.`,
+        noRolesInBoundaries: ":checkmark: No roles found in boundaries.\n",
+        noUnauthorizedUsers: ":checkmark: No unauthorized users.\n",
+        noUnauthorizedUsersCategory: (title) =>
+            `:checkmark: No unauthorized users found in **${title}**.`,
+    },
+    buttons: {
+        revokeRoles: "Revoke Roles",
+    },
+    selectMenu: {
+        placeholder: "Select categories to revoke...",
+    },
+    log: {
+        action: (username, action, roleName, prep, userStr) =>
+            `**${username}** ${action} **${roleName}** ${prep} ${userStr}`,
+    },
+};
+
 // Generate REVOKE_CONFIGS from ROLE_CATEGORIES
 const REVOKE_CONFIGS = {};
-ROLE_CATEGORIES.forEach(cat => {
+ROLE_CATEGORIES.forEach((cat) => {
     REVOKE_CONFIGS[cat.id] = {
         minRoleId: cat.minId,
         maxRoleId: cat.maxId,
         requiredRoleIds: cat.requiredRoles,
         title: cat.label,
         checkUnused: cat.checkUnused || false,
-        unauthorizedReason: "Revoked unauthorized gradient role"
+        unauthorizedReason: "Revoked unauthorized gradient role",
     };
 });
 
 async function sendLogMessage(interaction, action, roleName, targetUser) {
     try {
-        const logChannel = await interaction.guild.channels.fetch(
-            LOG_CHANNEL_ID
-        );
+        const logChannel =
+            await interaction.guild.channels.fetch(LOG_CHANNEL_ID);
         if (!logChannel || !logChannel.isTextBased()) {
             console.error(`Log channel ${LOG_CHANNEL_ID} not found.`);
             return;
@@ -43,8 +113,13 @@ async function sendLogMessage(interaction, action, roleName, targetUser) {
 
         // Format: "staff username assigned/removed roleName to/from @user"
         const preposition = action === "assigned" ? "to" : "from";
-        const logContent = `**${interaction.user.username
-            }** ${action} **${roleName}** ${preposition} ${targetUser.toString()}`;
+        const logContent = STRINGS.log.action(
+            interaction.user.username,
+            action,
+            roleName,
+            preposition,
+            targetUser.toString(),
+        );
 
         await logChannel.send(logContent);
     } catch (error) {
@@ -57,8 +132,7 @@ async function handleRemove(interaction) {
         !interaction.member.permissions.has(PermissionFlagsBits.Administrator)
     ) {
         return interaction.reply({
-            content:
-                "You do not have the required Staff role to use this command.",
+            content: STRINGS.errors.staffRequired,
             flags: MessageFlags.Ephemeral,
         });
     }
@@ -70,11 +144,13 @@ async function handleRemove(interaction) {
         const roleNameValue = interaction.options.getString("role");
 
         const roleConfig = ASSIGNABLE_ROLES.find(
-            (r) => r.name === roleNameValue
+            (r) => r.name === roleNameValue,
         );
 
         if (!roleConfig) {
-            return interaction.editReply({ content: "Invalid role selected." });
+            return interaction.editReply({
+                content: STRINGS.errors.invalidRole,
+            });
         }
 
         const member = await interaction.guild.members
@@ -82,32 +158,35 @@ async function handleRemove(interaction) {
             .catch(() => null);
         if (!member) {
             return interaction.editReply({
-                content: "User not found in this server.",
+                content: STRINGS.errors.userNotFound,
             });
         }
 
         const role = await interaction.guild.roles.fetch(roleConfig.id);
         if (!role) {
             return interaction.editReply({
-                content: `Error: The **${roleConfig.name}** role (ID: ${roleConfig.id}) was not found.`,
+                content: STRINGS.errors.roleNotFound(
+                    roleConfig.name,
+                    roleConfig.id,
+                ),
             });
         }
 
         if (!member.roles.cache.has(role.id)) {
             return interaction.editReply({
-                content: `${targetUser} does not have the **${role.name}** role.`,
+                content: STRINGS.errors.memberLacksRole(targetUser, role.name),
             });
         }
 
         await member.roles.remove(role);
         await interaction.editReply({
-            content: `✅ Successfully removed the **${role.name}** role from ${targetUser}.`,
+            content: STRINGS.success.removed(role.name, targetUser),
         });
         await sendLogMessage(interaction, "removed", role.name, targetUser);
     } catch (error) {
         console.error("Error in remove logic:", error);
         await interaction.editReply({
-            content: `An error occurred: ${error.message}`,
+            content: STRINGS.errors.genericError(error.message),
         });
     }
 }
@@ -117,8 +196,7 @@ async function handleAssign(interaction) {
         !interaction.member.permissions.has(PermissionFlagsBits.Administrator)
     ) {
         return interaction.reply({
-            content:
-                "You do not have the required Staff role to use this command.",
+            content: STRINGS.errors.staffRequired,
             flags: MessageFlags.Ephemeral,
         });
     }
@@ -130,11 +208,13 @@ async function handleAssign(interaction) {
         const roleNameValue = interaction.options.getString("role");
 
         const roleConfig = ASSIGNABLE_ROLES.find(
-            (r) => r.name === roleNameValue
+            (r) => r.name === roleNameValue,
         );
 
         if (!roleConfig) {
-            return interaction.editReply({ content: "Invalid role selected." });
+            return interaction.editReply({
+                content: STRINGS.errors.invalidRole,
+            });
         }
 
         const member = await interaction.guild.members
@@ -142,32 +222,35 @@ async function handleAssign(interaction) {
             .catch(() => null);
         if (!member) {
             return interaction.editReply({
-                content: "User not found in this server.",
+                content: STRINGS.errors.userNotFound,
             });
         }
 
         const role = await interaction.guild.roles.fetch(roleConfig.id);
         if (!role) {
             return interaction.editReply({
-                content: `Error: The **${roleConfig.name}** role (ID: ${roleConfig.id}) was not found.`,
+                content: STRINGS.errors.roleNotFound(
+                    roleConfig.name,
+                    roleConfig.id,
+                ),
             });
         }
 
         if (member.roles.cache.has(role.id)) {
             return interaction.editReply({
-                content: `${targetUser} already has the **${role.name}** role.`,
+                content: STRINGS.errors.memberHasRole(targetUser, role.name),
             });
         }
 
         await member.roles.add(role);
         await interaction.editReply({
-            content: `✅ Successfully assigned the **${role.name}** role to ${targetUser}.`,
+            content: STRINGS.success.assigned(role.name, targetUser),
         });
         await sendLogMessage(interaction, "assigned", role.name, targetUser);
     } catch (error) {
         console.error("Error in assign logic:", error);
         await interaction.editReply({
-            content: `An error occurred: ${error.message}`,
+            content: STRINGS.errors.genericError(error.message),
         });
     }
 }
@@ -176,7 +259,8 @@ function groupByRole(usersToProcess) {
     const byRole = new Map();
     usersToProcess.forEach(({ member, roles }) => {
         roles.forEach((role) => {
-            if (!byRole.has(role.id)) byRole.set(role.id, { role, members: [] });
+            if (!byRole.has(role.id))
+                byRole.set(role.id, { role, members: [] });
             byRole.get(role.id).members.push(member);
         });
     });
@@ -213,7 +297,7 @@ function scanCategory(guild, config) {
     const upperBound = Math.max(minRole.position, maxRole.position);
 
     const targetRoles = guild.roles.cache.filter(
-        (role) => role.position > lowerBound && role.position < upperBound
+        (role) => role.position > lowerBound && role.position < upperBound,
     );
 
     if (targetRoles.size === 0) return null;
@@ -226,7 +310,7 @@ function scanCategory(guild, config) {
         if (member.user.bot) return; // skip bots
 
         const isAuthorized = config.requiredRoleIds.some((roleId) =>
-            member.roles.cache.has(roleId)
+            member.roles.cache.has(roleId),
         );
 
         member.roles.cache.forEach((role) => {
@@ -235,7 +319,7 @@ function scanCategory(guild, config) {
 
         if (!isAuthorized) {
             const rolesToRemove = member.roles.cache.filter((role) =>
-                targetRoles.has(role.id)
+                targetRoles.has(role.id),
             );
             if (rolesToRemove.size > 0) {
                 usersToProcess.set(member.id, {
@@ -257,8 +341,7 @@ function scanCategory(guild, config) {
 async function handleRevoke(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
         return interaction.reply({
-            content:
-                'You need the "Manage Roles" permission to use this command.',
+            content: STRINGS.errors.manageRolesRequired,
             flags: MessageFlags.Ephemeral,
         });
     }
@@ -269,7 +352,9 @@ async function handleRevoke(interaction) {
         const isVisible = interaction.options.getBoolean("visible") ?? false;
         const shouldExecute = action === "execute";
 
-        await interaction.deferReply(isVisible ? {} : { flags: MessageFlags.Ephemeral });
+        await interaction.deferReply(
+            isVisible ? {} : { flags: MessageFlags.Ephemeral },
+        );
 
         // Fetch roles + members in parallel; give members up to 60s
         await Promise.all([
@@ -292,7 +377,7 @@ async function handleRevoke(interaction) {
                     const result = scanCategory(interaction.guild, config);
 
                     if (!result) {
-                        response += `## ${config.title}\n✅ No roles found in boundaries.\n`;
+                        response += `## ${config.title}\n${STRINGS.success.noRolesInBoundaries}`;
                         continue;
                     }
 
@@ -301,7 +386,7 @@ async function handleRevoke(interaction) {
                     const hasUnused = unusedRoles.size > 0;
 
                     if (!hasViolations && !hasUnused) {
-                        response += `## ${config.title}\n✅ No unauthorized users.\n`;
+                        response += `## ${config.title}\n${STRINGS.success.noUnauthorizedUsers}`;
                         continue;
                     }
 
@@ -311,11 +396,18 @@ async function handleRevoke(interaction) {
                     }
 
                     response += `## ${config.title}\n`;
-                    response += formatListByRole(usersToProcess, unusedRoles, config.title);
+                    response += formatListByRole(
+                        usersToProcess,
+                        unusedRoles,
+                        config.title,
+                    );
                 }
 
                 const replyPayload = {
-                    content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                    content:
+                        response.length > 2000
+                            ? response.substring(0, 1997) + "..."
+                            : response,
                     components: [],
                 };
 
@@ -323,14 +415,14 @@ async function handleRevoke(interaction) {
                     // Multi-select menu: one option per category that has violations
                     const selectMenu = new StringSelectMenuBuilder()
                         .setCustomId("revoke_select_categories")
-                        .setPlaceholder("Select categories to revoke...")
+                        .setPlaceholder(STRINGS.selectMenu.placeholder)
                         .setMinValues(1)
                         .setMaxValues(foundCategoryIds.length)
                         .addOptions(
-                            foundCategoryIds.map(id => ({
+                            foundCategoryIds.map((id) => ({
                                 label: REVOKE_CONFIGS[id].title,
                                 value: id,
-                            }))
+                            })),
                         );
 
                     replyPayload.components = [
@@ -354,31 +446,45 @@ async function handleRevoke(interaction) {
                 const result = scanCategory(interaction.guild, config);
 
                 if (!result) {
-                    response += `## ${config.title}\n✅ No roles found in boundaries.\n`;
+                    response += `## ${config.title}\n${STRINGS.success.noRolesInBoundaries}`;
                     continue;
                 }
 
                 const { usersToProcess } = result;
 
                 if (usersToProcess.size === 0) {
-                    response += `## ${config.title}\n✅ No unauthorized users.\n`;
+                    response += `## ${config.title}\n${STRINGS.success.noUnauthorizedUsers}`;
                     continue;
                 }
 
                 response += `## ${config.title}\n`;
                 totalUsers += usersToProcess.size;
 
-                for (const [userId, { member, roles }] of usersToProcess.entries()) {
+                for (const [
+                    userId,
+                    { member, roles },
+                ] of usersToProcess.entries()) {
                     response += `<@${userId}>:\n`;
                     for (const role of roles) {
                         try {
-                            await member.roles.remove(role, config.unauthorizedReason);
-                            response += `- ✅ Removed <@&${role.id}>\n`;
+                            await member.roles.remove(
+                                role,
+                                config.unauthorizedReason,
+                            );
+                            response += `- :checkmark: Removed <@&${role.id}>\n`;
                             totalRemoved++;
-                            await sendLogMessage(interaction, "revoked", role.name, member.user);
+                            await sendLogMessage(
+                                interaction,
+                                "revoked",
+                                role.name,
+                                member.user,
+                            );
                         } catch (error) {
-                            console.error(`Failed to remove role ${role.name} from ${member.user.tag}:`, error);
-                            response += `- ⚠️ Failed <@&${role.id}>: ${error.message}\n`;
+                            console.error(
+                                `Failed to remove role ${role.name} from ${member.user.tag}:`,
+                                error,
+                            );
+                            response += `- :warning: Failed <@&${role.id}>: ${error.message}\n`;
                             totalFailed++;
                         }
                     }
@@ -388,7 +494,10 @@ async function handleRevoke(interaction) {
             response += `\n**Summary** — Users: ${totalUsers} | Removed: ${totalRemoved} | Failed: ${totalFailed}`;
 
             return await interaction.editReply({
-                content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+                content:
+                    response.length > 2000
+                        ? response.substring(0, 1997) + "..."
+                        : response,
                 components: [],
             });
         }
@@ -396,14 +505,16 @@ async function handleRevoke(interaction) {
         // --- SINGLE CATEGORY ---
         const config = REVOKE_CONFIGS[categoryKey];
         if (!config) {
-            return interaction.editReply({ content: "Invalid category configuration." });
+            return interaction.editReply({
+                content: STRINGS.errors.invalidCategory,
+            });
         }
 
         const result = scanCategory(interaction.guild, config);
 
         if (!result) {
             return interaction.editReply({
-                content: "One of the boundary roles could not be found, or no roles exist between the boundaries.",
+                content: STRINGS.errors.boundaryNotFound,
             });
         }
 
@@ -414,31 +525,44 @@ async function handleRevoke(interaction) {
             // LIST mode
             if (usersToProcess.size === 0 && unusedRoles.size === 0) {
                 return await interaction.editReply({
-                    content: `✅ No unauthorized users found in **${config.title}**.`,
+                    content: STRINGS.success.noUnauthorizedUsersCategory(
+                        config.title,
+                    ),
                     components: [],
                 });
             }
 
-            const listText = formatListByRole(usersToProcess, unusedRoles, config.title);
+            const listText = formatListByRole(
+                usersToProcess,
+                unusedRoles,
+                config.title,
+            );
             const showButton = usersToProcess.size > 0;
 
             return await interaction.editReply({
-                content: listText.length > 2000 ? listText.substring(0, 1997) + "..." : listText,
-                components: showButton ? [
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`revoke_execute_${categoryKey}`)
-                            .setLabel("Revoke Roles")
-                            .setStyle(ButtonStyle.Danger)
-                    ),
-                ] : [],
+                content:
+                    listText.length > 2000
+                        ? listText.substring(0, 1997) + "..."
+                        : listText,
+                components: showButton
+                    ? [
+                          new ActionRowBuilder().addComponents(
+                              new ButtonBuilder()
+                                  .setCustomId(`revoke_execute_${categoryKey}`)
+                                  .setLabel(STRINGS.buttons.revokeRoles)
+                                  .setStyle(ButtonStyle.Danger),
+                          ),
+                      ]
+                    : [],
             });
         }
 
         // EXECUTE mode
         if (usersToProcess.size === 0) {
             return await interaction.editReply({
-                content: `✅ No unauthorized users found in **${config.title}**.`,
+                content: STRINGS.success.noUnauthorizedUsersCategory(
+                    config.title,
+                ),
                 components: [],
             });
         }
@@ -451,12 +575,20 @@ async function handleRevoke(interaction) {
             for (const role of roles) {
                 try {
                     await member.roles.remove(role, config.unauthorizedReason);
-                    response += `- ✅ Removed <@&${role.id}>\n`;
+                    response += `- :checkmark: Removed <@&${role.id}>\n`;
                     rolesRemovedCount++;
-                    await sendLogMessage(interaction, "revoked", role.name, member.user);
+                    await sendLogMessage(
+                        interaction,
+                        "revoked",
+                        role.name,
+                        member.user,
+                    );
                 } catch (error) {
-                    console.error(`Failed to remove role ${role.name} from ${member.user.tag}:`, error);
-                    response += `- ⚠️ Failed to remove <@&${role.id}>: ${error.message}\n`;
+                    console.error(
+                        `Failed to remove role ${role.name} from ${member.user.tag}:`,
+                        error,
+                    );
+                    response += `- :warning: Failed to remove <@&${role.id}>: ${error.message}\n`;
                     failedRemovalsCount++;
                 }
             }
@@ -465,103 +597,118 @@ async function handleRevoke(interaction) {
         response += `\n**Summary** — Users: ${usersToProcess.size} | Removed: ${rolesRemovedCount} | Failed: ${failedRemovalsCount}`;
 
         await interaction.editReply({
-            content: response.length > 2000 ? response.substring(0, 1997) + "..." : response,
+            content:
+                response.length > 2000
+                    ? response.substring(0, 1997) + "..."
+                    : response,
             components: [],
         });
-
     } catch (error) {
         console.error("Error in revoke logic:", error);
         await interaction.editReply({
-            content: `An error occurred: ${error.message}`,
+            content: STRINGS.errors.genericError(error.message),
         });
     }
 }
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("role")
-        .setDescription("Manage specific roles in the server.")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addSubcommand((subcommand) =>
             subcommand
-                .setName("assign")
-                .setDescription("assigns roles.")
+                .setName(STRINGS.command.assign.name)
+                .setDescription(STRINGS.command.assign.description)
                 .addUserOption((option) =>
                     option
                         .setName("user")
-                        .setDescription("The member to assign the role to")
-                        .setRequired(true)
+                        .setDescription(STRINGS.command.assign.userDescription)
+                        .setRequired(true),
                 )
                 .addStringOption((option) =>
                     option
                         .setName("role")
-                        .setDescription("The role to assign")
+                        .setDescription(STRINGS.command.assign.roleDescription)
                         .setRequired(true)
                         .addChoices(
                             ...ASSIGNABLE_ROLES.map((r) => ({
                                 name: r.name,
                                 value: r.name,
-                            }))
-                        )
-                )
+                            })),
+                        ),
+                ),
         )
         .addSubcommand((subcommand) =>
             subcommand
-                .setName("remove")
-                .setDescription("Removes roles")
+                .setName(STRINGS.command.remove.name)
+                .setDescription(STRINGS.command.remove.description)
                 .addUserOption((option) =>
                     option
                         .setName("user")
-                        .setDescription("The member to remove the role from")
-                        .setRequired(true)
+                        .setDescription(STRINGS.command.remove.userDescription)
+                        .setRequired(true),
                 )
                 .addStringOption((option) =>
                     option
                         .setName("role")
-                        .setDescription("The role to remove")
+                        .setDescription(STRINGS.command.remove.roleDescription)
                         .setRequired(true)
                         .addChoices(
                             ...ASSIGNABLE_ROLES.map((r) => ({
                                 name: r.name,
                                 value: r.name,
-                            }))
-                        )
-                )
+                            })),
+                        ),
+                ),
         )
         .addSubcommand((subcommand) =>
             subcommand
-                .setName("revoke")
-                .setDescription(
-                    "Revokes gradient/custom roles from unauthorized users."
-                )
+                .setName(STRINGS.command.revoke.name)
+                .setDescription(STRINGS.command.revoke.description)
                 .addStringOption((option) =>
                     option
                         .setName("category")
-                        .setDescription("The category of roles to check")
+                        .setDescription(
+                            STRINGS.command.revoke.categoryDescription,
+                        )
                         .setRequired(true)
                         .addChoices(
-                            { name: "All Categories", value: "all" },
-                            ...ROLE_CATEGORIES.map(cat => ({
+                            {
+                                name: STRINGS.command.revoke.choices.all,
+                                value: "all",
+                            },
+                            ...ROLE_CATEGORIES.map((cat) => ({
                                 name: cat.label,
-                                value: cat.id
-                            }))
-                        )
+                                value: cat.id,
+                            })),
+                        ),
                 )
                 .addStringOption((option) =>
                     option
                         .setName("action")
-                        .setDescription("Action to take")
+                        .setDescription(
+                            STRINGS.command.revoke.actionDescription,
+                        )
                         .setRequired(false)
                         .addChoices(
-                            { name: "List Unauthorized Users", value: "list" },
-                            { name: "Execute Revoke", value: "execute" }
-                        )
+                            {
+                                name: STRINGS.command.revoke.choices.list,
+                                value: "list",
+                            },
+                            {
+                                name: STRINGS.command.revoke.choices.execute,
+                                value: "execute",
+                            },
+                        ),
                 )
                 .addBooleanOption((option) =>
                     option
                         .setName("visible")
-                        .setDescription("Post the result publicly in the channel (default: hidden/ephemeral)")
-                        .setRequired(false)
-                )
+                        .setDescription(
+                            STRINGS.command.revoke.visibleDescription,
+                        )
+                        .setRequired(false),
+                ),
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 

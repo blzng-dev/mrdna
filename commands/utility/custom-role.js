@@ -15,36 +15,87 @@ const BOUNDARY_TWO_ID = "1424016949288898731";
 
 const LOG_CHANNEL_ID = "1207983772398526504";
 
+const STRINGS = {
+    command: {
+        name: "custom-role",
+        description: "Booster command to create or edit a personal custom role.",
+        options: {
+            name: {
+                name: "name",
+                description: "The name for your custom role.",
+            },
+            primary: {
+                name: "primary",
+                description: "A primary color hex code for your role",
+            },
+            secondary: {
+                name: "secondary",
+                description: "A secondary color hex code for your role.",
+            },
+            emoji: {
+                name: "emoji",
+                description: "A server / global emoji to use as your role icon.",
+            },
+        },
+    },
+    modals: {
+        createTitle: "Create Custom Role",
+        roleNameLabel: "What should your role be named?",
+    },
+    errors: {
+        boosterOnly: "This command is a special perk for server boosters. Please boost the server to use it!",
+        genericError: (msg) => `An error occurred: ${msg}. If this persists, please contact an admin.`,
+        invalidPrimaryHex: "The primary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+        invalidSecondaryHex: "The secondary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+        tierTooLowForIcons: "Your server must be Boost Level 2 to use role icons.",
+        customEmojiNotFound: "Could not find that custom emoji in this server.",
+        noEditFieldsProvided: "You must provide a new name, a new color, or a new emoji to edit your role.",
+        iconFailed: "\n\n**Warning:** Failed to set role icon. The emoji provided appears to be invalid or unsupported.",
+        iconRemoveFailed: "\n\n**Warning:** Failed to remove role icon.",
+        gradientNotSupported: "\n\n**Warning:** Gradient could not be applied because the server does not have Enhanced Role Styles enabled yet.",
+    },
+    messages: {
+        roleCreated: (roleId) => `Your new custom role <@&${roleId}> has been created and assigned to you!`,
+        roleUpdated: (roleId) => `Your custom role <@&${roleId}> has been successfully updated!`,
+        iconCustomSet: "\n\n**Role Icon:** Icon set to the selected custom emoji.",
+        iconUnicodeSet: (emoji) => `\n\n**Role Icon:** Icon set to ${emoji}.`,
+        iconCustomUpdated: "\n\n**Role Icon:** Icon updated to the selected custom emoji.",
+        iconUnicodeUpdated: (emoji) => `\n\n**Role Icon:** Icon updated to ${emoji}.`,
+        iconRemoved: "\n\n**Role Icon:** Icon removed.",
+        gradientApplied: "\n\n**Gradient Applied:** Gradient colors applied successfully!",
+        auditReasonCreated: (tag) => `Custom role created for booster ${tag}`,
+        auditReasonUpdated: (tag) => `Custom role updated for booster ${tag}`,
+        logMessage: (memberMention, action, roleMention, emojiString) =>
+            `Booster ${memberMention} has ${action} custom role ${roleMention}${emojiString ? ` with emoji ${emojiString} as icon` : ""}`,
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("custom-role")
-        .setDescription(
-            "Booster command to create or edit a personal custom role.",
-        )
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addStringOption((option) =>
             option
-                .setName("name")
-                .setDescription("The name for your custom role.")
+                .setName(STRINGS.command.options.name.name)
+                .setDescription(STRINGS.command.options.name.description)
                 .setRequired(false),
         )
         .addStringOption((option) =>
             option
-                .setName("primary")
-                .setDescription("A primary color hex code for your role")
+                .setName(STRINGS.command.options.primary.name)
+                .setDescription(STRINGS.command.options.primary.description)
                 .setRequired(false),
         )
         .addStringOption((option) =>
             option
-                .setName("secondary")
-                .setDescription("A secondary color hex code for your role.")
+                .setName(STRINGS.command.options.secondary.name)
+                .setDescription(STRINGS.command.options.secondary.description)
                 .setRequired(false),
         )
         .addStringOption((option) =>
             option
-                .setName("emoji")
-                .setDescription(
-                    "A server / global emoji to use as your role icon.",
-                )
+                .setName(STRINGS.command.options.emoji.name)
+                .setDescription(STRINGS.command.options.emoji.description)
                 .setRequired(false),
         ),
 
@@ -73,16 +124,15 @@ module.exports = {
 
             if (!isAllowed) {
                 return interaction.reply({
-                    content:
-                        "This command is a special perk for server boosters. Please boost the server to use it!",
+                    content: STRINGS.errors.boosterOnly,
                     flags: MessageFlags.Ephemeral,
                 });
             }
 
-            let finalRoleName = interaction.options.getString("name");
-            const rawPrimary = interaction.options.getString("primary");
-            const rawSecondary = interaction.options.getString("secondary");
-            const rawEmoji = interaction.options.getString("emoji");
+            let finalRoleName = interaction.options.getString(STRINGS.command.options.name.name);
+            const rawPrimary = interaction.options.getString(STRINGS.command.options.primary.name);
+            const rawSecondary = interaction.options.getString(STRINGS.command.options.secondary.name);
+            const rawEmoji = interaction.options.getString(STRINGS.command.options.emoji.name);
 
             let replyInteraction = interaction;
 
@@ -90,11 +140,11 @@ module.exports = {
             if (!existingUserRole && !finalRoleName) {
                 const modal = new ModalBuilder()
                     .setCustomId("customRoleNameModal")
-                    .setTitle("Create Custom Role");
+                    .setTitle(STRINGS.modals.createTitle);
 
                 const nameInput = new TextInputBuilder()
                     .setCustomId("roleNameInput")
-                    .setLabel("What should your role be named?")
+                    .setLabel(STRINGS.modals.roleNameLabel)
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
                     .setMaxLength(100);
@@ -151,7 +201,7 @@ module.exports = {
             }
         } catch (error) {
             console.error("Error in custom-role command:", error);
-            const errorMessage = `An error occurred: ${error.message}. If this persists, please contact an admin.`;
+            const errorMessage = STRINGS.errors.genericError(error.message);
             try {
                 if (interaction.deferred || interaction.replied) {
                     await interaction.followUp({
@@ -196,23 +246,21 @@ async function handleCreate(
 
     if (rawPrimary && !clearPrimary && validPrimaryColor === false) {
         return replyInteraction.followUp({
-            content:
-                "The primary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+            content: STRINGS.errors.invalidPrimaryHex,
             flags: MessageFlags.Ephemeral,
         });
     }
 
     if (rawSecondary && !clearSecondary && validSecondaryColor === false) {
         return replyInteraction.followUp({
-            content:
-                "The secondary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+            content: STRINGS.errors.invalidSecondaryHex,
             flags: MessageFlags.Ephemeral,
         });
     }
 
     if (rawEmoji && !clearEmoji && guild.premiumTier < 2) {
         return replyInteraction.followUp({
-            content: "Your server must be Boost Level 2 to use role icons.",
+            content: STRINGS.errors.tierTooLowForIcons,
             flags: MessageFlags.Ephemeral,
         });
     }
@@ -229,7 +277,7 @@ async function handleCreate(
                 roleIconUrl = emoji.imageURL({ extension: 'png' });
             } else {
                 return replyInteraction.followUp({
-                    content: "Could not find that custom emoji in this server.",
+                    content: STRINGS.errors.customEmojiNotFound,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -256,7 +304,7 @@ async function handleCreate(
         name: roleName,
         permissions: [],
         position: upperPosition - 1,
-        reason: `Custom role created for booster ${member.user.tag}`,
+        reason: STRINGS.messages.auditReasonCreated(member.user.tag),
     };
 
     if (newPrimary && newSecondary) {
@@ -275,37 +323,34 @@ async function handleCreate(
     const newRole = await guild.roles.create(roleOptions);
     await member.roles.add(newRole.id);
 
-    let replyMsg = `Your new custom role <@&${newRole.id}> has been created and assigned to you!`;
+    let replyMsg = STRINGS.messages.roleCreated(newRole.id);
 
     let emojiStringForLog = null;
 
     if (roleIconUrl) {
         try {
             await newRole.setIcon(roleIconUrl);
-            replyMsg +=
-                "\n\n**Role Icon:** Icon set to the selected custom emoji.";
+            replyMsg += STRINGS.messages.iconCustomSet;
             emojiStringForLog = rawEmoji;
         } catch (error) {
             console.error("Failed to set role icon:", error);
-            replyMsg +=
-                "\n\n**Warning:** Failed to set role icon. The emoji provided appears to be invalid or unsupported.";
+            replyMsg += STRINGS.errors.iconFailed;
         }
     } else if (unicodeEmoji) {
         try {
             await newRole.setUnicodeEmoji(unicodeEmoji);
-            replyMsg += `\n\n**Role Icon:** Icon set to ${unicodeEmoji}.`;
+            replyMsg += STRINGS.messages.iconUnicodeSet(unicodeEmoji);
             emojiStringForLog = unicodeEmoji;
         } catch (error) {
             console.error("Failed to set unicode emoji:", error);
-            replyMsg +=
-                "\n\n**Warning:** Failed to set role icon. The emoji provided appears to be invalid or unsupported.";
+            replyMsg += STRINGS.errors.iconFailed;
         }
     }
 
     if (hasEnhancedStyles && newPrimary && newSecondary) {
-        replyMsg += `\n\n**Gradient Applied:** Gradient colors applied successfully!`;
+        replyMsg += STRINGS.messages.gradientApplied;
     } else if (newSecondary && !hasEnhancedStyles) {
-        replyMsg += `\n\n**Warning:** Gradient could not be applied because the server does not have Enhanced Role Styles enabled yet.`;
+        replyMsg += STRINGS.errors.gradientNotSupported;
     }
 
     await replyInteraction.followUp({
@@ -343,23 +388,21 @@ async function handleEdit(
 
     if (rawPrimary && !clearPrimary && validPrimaryColor === false) {
         return replyInteraction.followUp({
-            content:
-                "The primary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+            content: STRINGS.errors.invalidPrimaryHex,
             flags: MessageFlags.Ephemeral,
         });
     }
 
     if (rawSecondary && !clearSecondary && validSecondaryColor === false) {
         return replyInteraction.followUp({
-            content:
-                "The secondary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+            content: STRINGS.errors.invalidSecondaryHex,
             flags: MessageFlags.Ephemeral,
         });
     }
 
     if (rawEmoji && !clearEmoji && guild.premiumTier < 2) {
         return replyInteraction.followUp({
-            content: "Your server must be Boost Level 2 to use role icons.",
+            content: STRINGS.errors.tierTooLowForIcons,
             flags: MessageFlags.Ephemeral,
         });
     }
@@ -376,7 +419,7 @@ async function handleEdit(
                 roleIconUrl = emoji.imageURL({ extension: 'png' });
             } else {
                 return replyInteraction.followUp({
-                    content: "Could not find that custom emoji in this server.",
+                    content: STRINGS.errors.customEmojiNotFound,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -387,8 +430,7 @@ async function handleEdit(
 
     if (!roleName && !rawPrimary && !rawSecondary && !rawEmoji) {
         return replyInteraction.followUp({
-            content:
-                "You must provide a new name, a new color, or a new emoji to edit your role.",
+            content: STRINGS.errors.noEditFieldsProvided,
             flags: MessageFlags.Ephemeral,
         });
     }
@@ -396,7 +438,7 @@ async function handleEdit(
     const hasEnhancedStyles = guild.features.includes("ENHANCED_ROLE_COLORS");
     let editOptions = {
         name: roleName || existingUserRole.name,
-        reason: `Custom role updated for booster ${member.user.tag}`,
+        reason: STRINGS.messages.auditReasonUpdated(member.user.tag),
     };
 
     const oldPrimary =
@@ -434,7 +476,7 @@ async function handleEdit(
 
     const updatedRole = await existingUserRole.edit(editOptions);
 
-    let replyMsg = `Your custom role <@&${updatedRole.id}> has been successfully updated!`;
+    let replyMsg = STRINGS.messages.roleUpdated(updatedRole.id);
 
     let emojiStringForLog = null;
 
@@ -442,39 +484,36 @@ async function handleEdit(
         try {
             await updatedRole.setIcon(null);
             await updatedRole.setUnicodeEmoji(null);
-            replyMsg += "\n\n**Role Icon:** Icon removed.";
+            replyMsg += STRINGS.messages.iconRemoved;
             emojiStringForLog = "removed";
         } catch (error) {
             console.error("Failed to remove role icon:", error);
-            replyMsg += "\n\n**Warning:** Failed to remove role icon.";
+            replyMsg += STRINGS.errors.iconRemoveFailed;
         }
     } else if (roleIconUrl) {
         try {
             await updatedRole.setIcon(roleIconUrl);
-            replyMsg +=
-                "\n\n**Role Icon:** Icon updated to the selected custom emoji.";
+            replyMsg += STRINGS.messages.iconCustomUpdated;
             emojiStringForLog = rawEmoji;
         } catch (error) {
             console.error("Failed to set role icon:", error);
-            replyMsg +=
-                "\n\n**Warning:** Failed to set role icon. The emoji provided appears to be invalid or unsupported.";
+            replyMsg += STRINGS.errors.iconFailed;
         }
     } else if (unicodeEmoji) {
         try {
             await updatedRole.setUnicodeEmoji(unicodeEmoji);
-            replyMsg += `\n\n**Role Icon:** Icon updated to ${unicodeEmoji}.`;
+            replyMsg += STRINGS.messages.iconUnicodeUpdated(unicodeEmoji);
             emojiStringForLog = unicodeEmoji;
         } catch (error) {
             console.error("Failed to set unicode emoji:", error);
-            replyMsg +=
-                "\n\n**Warning:** Failed to set role icon. The emoji provided appears to be invalid or unsupported.";
+            replyMsg += STRINGS.errors.iconFailed;
         }
     }
 
     if (hasEnhancedStyles && validSecondaryColor) {
-        replyMsg += `\n\n**Gradient Applied:** Gradient colors applied successfully!`;
+        replyMsg += STRINGS.messages.gradientApplied;
     } else if (validSecondaryColor && !hasEnhancedStyles) {
-        replyMsg += `\n\n**Warning:** Gradient could not be applied because the server does not have Enhanced Role Styles enabled yet.`;
+        replyMsg += STRINGS.errors.gradientNotSupported;
     }
 
     await replyInteraction.followUp({
@@ -537,10 +576,7 @@ async function sendLogMessage(guild, action, role, member, emojiString) {
         const logChannel = await guild.channels.fetch(LOG_CHANNEL_ID);
         if (!logChannel || !logChannel.isTextBased()) return;
 
-        let logMessage = `Booster ${member.toString()} has ${action} custom role ${role.toString()}`;
-        if (emojiString) {
-            logMessage += ` with emoji ${emojiString} as icon`;
-        }
+        const logMessage = STRINGS.messages.logMessage(member.toString(), action, role.toString(), emojiString);
         await logChannel.send(logMessage);
     } catch (error) {
         console.error("Failed to send log message:", error);

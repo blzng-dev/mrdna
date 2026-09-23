@@ -14,16 +14,40 @@ const {
 
 const { collectAllMediaItems, replaceMediaInComponents } = require('../../utils/messageParser');
 
+const STRINGS = {
+    command: {
+        name: 'Replace Media',
+    },
+    modals: {
+        title: 'Replace Media',
+        selectLabel: 'Target Image Index(es) to Replace',
+        placeholder: 'Select image index(es) to replace',
+        optionLabel: (index) => `Image ${index}`,
+        optionDesc: (index) => `Replace Image #${index}`,
+        uploadLabel: 'Upload Replacement Image(s)',
+    },
+    errors: {
+        notOwnMessage: 'I can only manage media on my own messages.',
+        noMedia: 'This message does not contain any images or media gallery items to replace.',
+        noSelection: 'No image index was selected.',
+        noReplacementUploaded: 'No replacement images were uploaded.',
+        failedToReplace: 'Failed to replace media on this message.',
+    },
+    messages: {
+        replacedSuccess: (indicesStr) => `Image(s) at index [${indicesStr}] replaced successfully!`,
+    },
+};
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Replace Media')
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
     async execute(interaction) {
         if (interaction.targetMessage.author.id !== interaction.client.user.id) {
             return interaction.reply({
-                content: 'I can only manage media on my own messages.',
+                content: STRINGS.errors.notOwnMessage,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -35,7 +59,7 @@ module.exports = {
         const existingMedia = collectAllMediaItems(rawMessage.components);
         if (existingMedia.length === 0) {
             return interaction.reply({
-                content: 'This message does not contain any images or media gallery items to replace.',
+                content: STRINGS.errors.noMedia,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -45,21 +69,21 @@ module.exports = {
             const index = i + 1;
             selectOptions.push(
                 new StringSelectMenuOptionBuilder()
-                    .setLabel(`Image ${index}`)
+                    .setLabel(STRINGS.modals.optionLabel(index))
                     .setValue(`${index}`)
-                    .setDescription(`Replace Image #${index}`)
+                    .setDescription(STRINGS.modals.optionDesc(index))
             );
         }
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('media_indices')
-            .setPlaceholder('Select image index(es) to replace')
+            .setPlaceholder(STRINGS.modals.placeholder)
             .setMinValues(1)
             .setMaxValues(existingMedia.length)
             .addOptions(selectOptions);
 
         const selectLabel = new LabelBuilder()
-            .setLabel('Target Image Index(es) to Replace')
+            .setLabel(STRINGS.modals.selectLabel)
             .setStringSelectMenuComponent(selectMenu);
 
         const fileUpload = new FileUploadBuilder()
@@ -69,12 +93,12 @@ module.exports = {
             .setMaxValues(10);
 
         const fileLabel = new LabelBuilder()
-            .setLabel('Upload Replacement Image(s)')
+            .setLabel(STRINGS.modals.uploadLabel)
             .setFileUploadComponent(fileUpload);
 
         const modal = new ModalBuilder()
             .setCustomId(`replace_media_modal_${interaction.targetId}`)
-            .setTitle('Replace Media')
+            .setTitle(STRINGS.modals.title)
             .addComponents(selectLabel, fileLabel);
 
         await interaction.showModal(modal);
@@ -90,7 +114,7 @@ module.exports = {
 
         if (selectedIndices.length === 0) {
             return interaction.editReply({
-                content: 'No image index was selected.'
+                content: STRINGS.errors.noSelection
             });
         }
 
@@ -110,7 +134,7 @@ module.exports = {
 
         if (attachments.length === 0) {
             return interaction.editReply({
-                content: 'No replacement images were uploaded.'
+                content: STRINGS.errors.noReplacementUploaded
             });
         }
 
@@ -149,12 +173,12 @@ module.exports = {
             });
 
             await interaction.editReply({
-                content: `Image(s) at index [${selectedIndices.join(', ')}] replaced successfully!`
+                content: STRINGS.messages.replacedSuccess(selectedIndices.join(', '))
             });
         } catch (error) {
             console.error(error);
             await interaction.editReply({
-                content: 'Failed to replace media on this message.'
+                content: STRINGS.errors.failedToReplace
             });
         }
     }

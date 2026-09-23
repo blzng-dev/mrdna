@@ -12,24 +12,48 @@ const GLOBAL_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 const channelCooldowns = new Map();
 
+const STRINGS = {
+    command: {
+        name: "watch-party",
+        description: "Pings the watch party role",
+        optionContentDescription: "What are you watching?",
+        optionChannelDescription: "Where are you watching?",
+        channelChoices: {
+            general: "General",
+            music: "Music",
+            stream: "Stream",
+        },
+    },
+    errors: {
+        noMentions: "Please send the command again without any mentions.",
+        generic: "There was an error sending the message.",
+    },
+    cooldown: {
+        active: (timeLeft) => `Command is on cooldown. Available <t:${timeLeft}:R>`,
+    },
+    messages: {
+        announcement: (userId, roleId, contents, channelSuffix) => `<@${userId}> is hosting a <@&${roleId}> for **${contents}**${channelSuffix}\n-# if you don't want to get pinged, go to <id:customize> & remove the role`,
+    },
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("watch-party")
-        .setDescription("Pings the watch party role")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addStringOption((option) =>
             option
                 .setName("content")
-                .setDescription("What are you watching?")
+                .setDescription(STRINGS.command.optionContentDescription)
                 .setRequired(true),
         )
         .addStringOption((option) =>
             option
                 .setName("channel")
-                .setDescription("Where are you watching?")
+                .setDescription(STRINGS.command.optionChannelDescription)
                 .addChoices(
-                    { name: "General", value: "843830483141525564" },
-                    { name: "Music", value: "843830571158339644" },
-                    { name: "Stream", value: "843831162732544030" },
+                    { name: STRINGS.command.channelChoices.general, value: "843830483141525564" },
+                    { name: STRINGS.command.channelChoices.music, value: "843830571158339644" },
+                    { name: STRINGS.command.channelChoices.stream, value: "843831162732544030" },
                 ),
         ),
 
@@ -48,8 +72,7 @@ module.exports = {
             const pingPatterns = [/@everyone/, /@here/, /<@&?\d+>/];
             if (pingPatterns.some((p) => p.test(contents))) {
                 return interaction.reply({
-                    content:
-                        "Please send the command again without any mentions.",
+                    content: STRINGS.errors.noMentions,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -60,7 +83,7 @@ module.exports = {
             if (now < unlockTime) {
                 const timeLeft = Math.floor(unlockTime / 1000);
                 return interaction.reply({
-                    content: `Command is on cooldown. Available <t:${timeLeft}:R>`,
+                    content: STRINGS.cooldown.active(timeLeft),
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -68,7 +91,7 @@ module.exports = {
 
             // 4. Send Watch Party Ping
             await interaction.reply({
-                content: `<@${user.id}> is hosting a <@&${WATCH_PARTY_ROLE_ID}> for **${contents}**${channelSuffix}\n-# if you don't want to get pinged, go to <id:customize> & remove the role`,
+                content: STRINGS.messages.announcement(user.id, WATCH_PARTY_ROLE_ID, contents, channelSuffix),
                 allowedMentions: {
                     roles: [WATCH_PARTY_ROLE_ID],
                     users: [user.id],
@@ -77,7 +100,7 @@ module.exports = {
         } catch (error) {
             console.error("Error in watch-party command:", error);
             await interaction.reply({
-                content: "There was an error sending the message.",
+                content: STRINGS.errors.generic,
                 flags: MessageFlags.Ephemeral,
             });
         }

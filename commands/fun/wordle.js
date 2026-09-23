@@ -9,14 +9,64 @@ const COOLDOWN_MS = 5 * 60 * 1000;
 // Track active games
 const activeGames = new Set();
 
-const EMOJIS = {
-    HAZARD: "<:hazard:1462056327378501738>",
-    SLOWMODE: "<:slowmode:1459169352195506321>",
-    CROSS: "<:x_:1462055048526954611>",
-    UNKNOWN: "<:unknown:1462055031187705918>",
-    CHECKMARK: "<:checkmark:1462055059197137069>",
-    CLOCK: "<:clock:1459169364182958244>",
+const STRINGS = {
+    command: {
+        name: "wordle",
+        description: "Play Wordle",
+        subcommands: {
+            jurassic: {
+                name: "jurassic",
+                description: "Play Jurassic Wordle",
+                options: {
+                    type: {
+                        name: "type",
+                        description: "Filter by Type",
+                    },
+                },
+            },
+            paleo: {
+                name: "paleo",
+                description: "Play Paleo Wordle",
+            },
+        },
+    },
+    emojis: {
+        hazard: ":hazard:",
+        slowmode: ":slowmode:",
+        cross: ":x_:",
+        unknown: ":unknown:",
+        checkmark: ":checkmark:",
+        clock: ":clock:",
+    },
+    messages: {
+        tooManyFilters: ":hazard: **Too many filters!**\nPlease select only **one** filter (Type, Period, or Diet) for now.",
+        alreadyPlaying: ":hazard: You already have a game in progress!",
+        cooldownActive: (timestamp) => `:slowmode: **Cooldown Active!** You quit too many games. Try again <t:${timestamp}:R>.`,
+        dbEmpty: (mode) => `:x_: The **${mode}** database is empty!`,
+        noWordsFound: (filterDesc) => `:x_: No words found with filters: **${filterDesc}**!`,
+        dbError: ":x_: Database error.",
+        initialStatus: (emptyRow, wordLength, maxChances, timeString) =>
+            `${emptyRow}\n-# Length: ${wordLength} | Chances: ${maxChances} | Ends ${timeString}, type 'extend' to increase time, type 'end game' to end`,
+        timerExtended: (newEndTime) => `:slowmode: **Timer Extended!** Game ends <t:${newEndTime}:R>.`,
+        hintsLocked: (threshold) => `:hazard: Hints are only available in the **last ${threshold} guesses**!`,
+        hintLimitReached: ":hazard: You can only use **one hint per turn**!",
+        noHintsAvailable: ":unknown: No property information available.",
+        hint: (hintText) => `**HINT:** ${hintText}`,
+        gameStoppedCooldown: (secretWord) =>
+            `:unknown: Game stopped. The word was *${secretWord.toLowerCase()}*.\n:slowmode: You are now on cooldown for 5 minutes for ending too many games without completion.`,
+        gameStopped: (secretWord) =>
+            `:unknown: Game stopped. The word was *${secretWord.toLowerCase()}*.\n-# Warning: Quitting repeatedly will trigger a cooldown.`,
+        invalidWordLength: (wordLength) => `:hazard: Word must be **${wordLength}** letters long!`,
+        wordNotInDb: (guess, mode) => `:x_: **${guess.toLowerCase()}** is not in the ${mode} database!`,
+        footerPrompt: (remaining, timeString) =>
+            `-# ${remaining} guesses left | Ends ${timeString}${remaining <= 3 ? " | Type 'hint' to get a hint" : ""}`,
+        gameWon: (rowEmojis, secretWord) => `${rowEmojis}\n:checkmark: Correct! The word was *${secretWord.toLowerCase()}*.`,
+        gameOver: (rowEmojis, secretWord, footer) => `${rowEmojis}\n:clock: Game Over. The word was *${secretWord.toLowerCase()}*.\n${footer}`,
+        turnResult: (rowEmojis, footer) => `${rowEmojis}\n${footer}`,
+        timesUp: (secretWord) => `:slowmode: Time's up! The word was *${secretWord.toLowerCase()}*.`,
+    },
 };
+
 async function safeReply(originalMessage, content) {
     try {
         return await originalMessage.reply(content);
@@ -32,25 +82,25 @@ const MULTI_FILTER_ENABLED = false;
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName("wordle")
-        .setDescription("Play Wordle")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         // --- JURASSIC MODE ---
         .addSubcommand((sub) =>
             sub
-                .setName("jurassic")
-                .setDescription("Play Jurassic Wordle")
+                .setName(STRINGS.command.subcommands.jurassic.name)
+                .setDescription(STRINGS.command.subcommands.jurassic.description)
                 .addStringOption((option) =>
                     option
-                        .setName("type")
-                        .setDescription("Filter by Type")
+                        .setName(STRINGS.command.subcommands.jurassic.options.type.name)
+                        .setDescription(STRINGS.command.subcommands.jurassic.options.type.description)
                         .setAutocomplete(true)
                 )
         )
         // --- PALEO MODE ---
         .addSubcommand((sub) =>
             sub
-                .setName("paleo")
-                .setDescription("Play Paleo Wordle")
+                .setName(STRINGS.command.subcommands.paleo.name)
+                .setDescription(STRINGS.command.subcommands.paleo.description)
         ),
 
     // ---------------------------------------------------------
@@ -71,7 +121,7 @@ module.exports = {
         try {
             // Query the properties table for specific types
             const res = await db.query(
-                `SELECT property FROM wordle_properties 
+                `SELECT property FROM wordle.properties 
                  WHERE database = $1 AND type = $2 
                  ORDER BY property ASC`,
                 [mode, filterType]
@@ -103,7 +153,7 @@ module.exports = {
         // --- GAME LOGIC ---
         const userId = interaction.user.id;
         const mode = subcommand;
-        const tableName = mode === "paleo" ? "wordle_paleo" : "wordle_jurassic";
+        const tableName = mode === "paleo" ? "wordle.paleo" : "wordle.jurassic";
         // ... rest of game logic ...
 
         const typeFilter = interaction.options.getString("type");
@@ -123,7 +173,7 @@ module.exports = {
         // Enforce Single Filter Rule (unless overridden)
         if (!MULTI_FILTER_ENABLED && activeFilters.length > 1) {
             return interaction.reply({
-                content: `${EMOJIS.HAZARD} **Too many filters!**\nPlease select only **one** filter (Type, Period, or Diet) for now.`,
+                content: STRINGS.messages.tooManyFilters,
                 flags: MessageFlags.Ephemeral,
             });
         }
@@ -131,8 +181,7 @@ module.exports = {
         // 2. FAST CHECKS
         if (activeGames.has(userId)) {
             return interaction.reply({
-                content:
-                    `${EMOJIS.HAZARD} You already have a game in progress!`,
+                content: STRINGS.messages.alreadyPlaying,
                 flags: MessageFlags.Ephemeral,
             });
         }
@@ -143,9 +192,7 @@ module.exports = {
         };
         if (Date.now() < stats.cooldownUntil) {
             return interaction.reply({
-                content: `${EMOJIS.SLOWMODE} **Cooldown Active!** You quit too many games. Try again <t:${Math.floor(
-                    stats.cooldownUntil / 1000
-                )}:R>.`,
+                content: STRINGS.messages.cooldownActive(Math.floor(stats.cooldownUntil / 1000)),
                 flags: MessageFlags.Ephemeral,
             });
         }
@@ -171,7 +218,7 @@ module.exports = {
             if (allWordsRes.rows.length === 0) {
                 activeGames.delete(userId);
                 return interaction.editReply(
-                    `${EMOJIS.CROSS} The **${mode}** database is empty!`
+                    STRINGS.messages.dbEmpty(mode)
                 );
             }
 
@@ -206,7 +253,7 @@ module.exports = {
                 activeGames.delete(userId);
                 const filterDesc = activeFilters.map(f => `${f.key}: ${f.val}`).join(", ");
                 return interaction.editReply(
-                    `${EMOJIS.CROSS} No words found with filters: **${filterDesc}**!`
+                    STRINGS.messages.noWordsFound(filterDesc)
                 );
             }
 
@@ -224,7 +271,7 @@ module.exports = {
             console.error(err);
             activeGames.delete(userId);
             return interaction.editReply(
-                `${EMOJIS.CROSS} Database error.`
+                STRINGS.messages.dbError
             );
         }
 
@@ -248,7 +295,7 @@ module.exports = {
 
         // Initial embed has no footer hint text because hints only unlock in last 3 guesses
         await interaction.editReply({
-            content: `${emptyRow}\n-# Length: ${wordLength} | Chances: ${maxChances} | Ends ${timeString}, type 'extend' to increase time, type 'end game' to end`,
+            content: STRINGS.messages.initialStatus(emptyRow, wordLength, maxChances, timeString),
         });
 
         const collector = interaction.channel.createMessageCollector({
@@ -266,7 +313,7 @@ module.exports = {
                 const newEndTime = Math.floor((Date.now() + 600_000) / 1000);
                 await safeReply(
                     message,
-                    `${EMOJIS.SLOWMODE} **Timer Extended!** Game ends <t:${newEndTime}:R>.`
+                    STRINGS.messages.timerExtended(newEndTime)
                 );
                 return;
             }
@@ -283,7 +330,7 @@ module.exports = {
                 if (remaining > hintUnlockThreshold) {
                     const warning = await safeReply(
                         message,
-                        `${EMOJIS.HAZARD} Hints are only available in the **last ${hintUnlockThreshold} guesses**!`
+                        STRINGS.messages.hintsLocked(hintUnlockThreshold)
                     );
                     setTimeout(() => warning.delete().catch(() => { }), 4000);
                     return;
@@ -293,7 +340,7 @@ module.exports = {
                 if (turnHintUsed) {
                     const warning = await safeReply(
                         message,
-                        `${EMOJIS.HAZARD} You can only use **one hint per turn**!`
+                        STRINGS.messages.hintLimitReached
                     );
                     setTimeout(() => warning.delete().catch(() => { }), 3000);
                     return;
@@ -302,7 +349,7 @@ module.exports = {
                 // 3. Generate Hint
                 let availableHints = secretData.hints;
                 if (!availableHints || availableHints.length === 0) {
-                    await safeReply(message, `${EMOJIS.UNKNOWN} No property information available.`);
+                    await safeReply(message, STRINGS.messages.noHintsAvailable);
                     return;
                 }
 
@@ -334,7 +381,7 @@ module.exports = {
                 usedHints.add(hintText);
                 turnHintUsed = true; // Mark as utilized for this turn
 
-                await safeReply(message, `**HINT:** ${hintText}`);
+                await safeReply(message, STRINGS.messages.hint(hintText));
                 return;
             }
 
@@ -348,13 +395,13 @@ module.exports = {
                     playerStats.set(userId, stats);
                     await safeReply(
                         message,
-                        `${EMOJIS.UNKNOWN} Game stopped. The word was *${secretWord.toLowerCase()}*.\n${EMOJIS.SLOWMODE} You are now on cooldown for 5 minutes for ending too many games without completion.`
+                        STRINGS.messages.gameStoppedCooldown(secretWord)
                     );
                 } else {
                     playerStats.set(userId, stats);
                     await safeReply(
                         message,
-                        `${EMOJIS.UNKNOWN} Game stopped. The word was *${secretWord.toLowerCase()}*.\n-# Warning: Quitting repeatedly will trigger a cooldown.`
+                        STRINGS.messages.gameStopped(secretWord)
                     );
                 }
                 collector.stop();
@@ -365,27 +412,18 @@ module.exports = {
             if (content.length !== wordLength) {
                 const warning = await safeReply(
                     message,
-                    `${EMOJIS.HAZARD} Word must be **${wordLength}** letters long!`
+                    STRINGS.messages.invalidWordLength(wordLength)
                 );
                 if (warning)
                     setTimeout(() => warning.delete().catch(() => { }), 3000);
                 return;
             }
-            if (!/^[A-Z0-9\s-]+$/.test(content)) return; // Allow numbers/spaces for Jurassic words usually?
-            // Actually original regexp was just [A-Z]+. 
-            // Jurassic names like "Jurassic Park 1" have numbers and spaces. 
-            // I should assume the guess input is sanitized or matching the stored format.
-            // The stored format in DB is raw string. But in game, usually we strip spaces?
-            // Original code: if (!/^[A-Z]+$/.test(content)) return;
-            // Let's stick to simple letters for now unless the user complains, or loosen it.
-            // Wait, "Tyrannosaurus Rex" has space.
-            // If the user types "TYRANNOSAURUS REX", it should work.
-            // So regex update: /^[A-Z0-9\s-]+$/
+            if (!/^[A-Z0-9\s-]+$/.test(content)) return;
 
             if (!validWords.has(content)) {
                 const warning = await safeReply(
                     message,
-                    `${EMOJIS.CROSS} **${content.toLowerCase()}** is not in the ${mode} database!`
+                    STRINGS.messages.wordNotInDb(content, mode)
                 );
                 if (warning)
                     setTimeout(() => warning.delete().catch(() => { }), 3000);
@@ -399,10 +437,7 @@ module.exports = {
             const currentTurn = guesses.length;
             const remaining = maxChances - currentTurn;
             const rowEmojis = generateCustomRow(content, secretWord, appEmojis);
-
-            // Only show "Type 'hint'" in footer if in danger zone (last 3 guesses)
-            const hintPrompt = remaining <= 3 ? " | Type 'hint' to get a hint" : "";
-            const footer = `-# ${remaining} guesses left | Ends ${timeString}${hintPrompt}`;
+            const footer = STRINGS.messages.footerPrompt(remaining, timeString);
 
             if (content === secretWord) {
                 isGameOver = true;
@@ -410,7 +445,7 @@ module.exports = {
                 playerStats.set(userId, stats);
                 await safeReply(
                     message,
-                    `${rowEmojis}\n${EMOJIS.CHECKMARK} Correct! The word was *${secretWord.toLowerCase()}*.`
+                    STRINGS.messages.gameWon(rowEmojis, secretWord)
                 );
                 collector.stop();
                 return;
@@ -422,20 +457,20 @@ module.exports = {
                 playerStats.set(userId, stats);
                 await safeReply(
                     message,
-                    `${rowEmojis}\n${EMOJIS.CLOCK} Game Over. The word was *${secretWord.toLowerCase()}*.\n${footer}`
+                    STRINGS.messages.gameOver(rowEmojis, secretWord, footer)
                 );
                 collector.stop();
                 return;
             }
 
-            await safeReply(message, `${rowEmojis}\n${footer}`);
+            await safeReply(message, STRINGS.messages.turnResult(rowEmojis, footer));
         });
 
         collector.on("end", (collected, reason) => {
             activeGames.delete(userId);
             if (reason === "time" && !isGameOver) {
                 interaction.followUp(
-                    `${EMOJIS.SLOWMODE} Time's up! The word was *${secretWord.toLowerCase()}*.`
+                    STRINGS.messages.timesUp(secretWord)
                 );
             }
         });

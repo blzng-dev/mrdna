@@ -10,15 +10,36 @@ const path = require("node:path");
 // PASTE YOUR DISCORD USER ID HERE TO USE THIS COMMAND
 const OWNER_ID = "732177983741362256";
 
+const STRINGS = {
+    command: {
+        name: "reload",
+        description: "reloads a command",
+        optionCommandDescription: "The command to reload",
+    },
+    shutdown: {
+        ownerOnly: "The shutdown action is restricted to the bot owner.",
+        inProgress: "Bot is shutting down...",
+        error: "An error occurred while trying to shut down.",
+    },
+    errors: {
+        commandNotFound: (name) => `There is no command with the name \`/${name}\`!`,
+        fileNotFound: (name) => `Could not find the file for command \`/${name}\`!`,
+        reloadFailed: (name, message) => `Error reloading \`/${name}\`\n\`${message}\``,
+    },
+    success: {
+        reloaded: (name) => `Command \`/${name}\` was successfully reloaded! :arrows_counterclockwise:`,
+    },
+};
+
 module.exports = {
     category: "utility",
     data: new SlashCommandBuilder()
-        .setName("reload")
-        .setDescription("reloads a command")
+        .setName(STRINGS.command.name)
+        .setDescription(STRINGS.command.description)
         .addStringOption((option) =>
             option
                 .setName("command")
-                .setDescription("The command to reload")
+                .setDescription(STRINGS.command.optionCommandDescription)
                 .setRequired(true)
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // Restrict to administrators only
@@ -32,8 +53,7 @@ module.exports = {
             // Check if the user is the bot owner
             if (interaction.user.id !== OWNER_ID) {
                 return interaction.reply({
-                    content:
-                        "The shutdown action is restricted to the bot owner.",
+                    content: STRINGS.shutdown.ownerOnly,
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -43,7 +63,7 @@ module.exports = {
                     `Shutdown command received from ${interaction.user.tag}.`
                 );
                 await interaction.reply({
-                    content: "Bot is shutting down...",
+                    content: STRINGS.shutdown.inProgress,
                     flags: MessageFlags.Ephemeral,
                 });
                 // Exit the process
@@ -56,7 +76,7 @@ module.exports = {
                 // This is a fallback in case the reply fails for some reason
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({
-                        content: "An error occurred while trying to shut down.",
+                        content: STRINGS.shutdown.error,
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -69,7 +89,7 @@ module.exports = {
 
         if (!command) {
             return interaction.reply({
-                content: `There is no command with the name \`/${commandName}\`!`,
+                content: STRINGS.errors.commandNotFound(commandName),
                 flags: MessageFlags.Ephemeral,
             });
         }
@@ -100,7 +120,7 @@ module.exports = {
 
             if (!commandPath) {
                 return interaction.reply({
-                    content: `Could not find the file for command \`/${commandName}\`!`,
+                    content: STRINGS.errors.fileNotFound(commandName),
                     flags: MessageFlags.Ephemeral,
                 });
             }
@@ -113,13 +133,13 @@ module.exports = {
             interaction.client.commands.set(newCommand.data.name, newCommand);
 
             await interaction.reply({
-                content: `Command \`/${newCommand.data.name}\` was successfully reloaded! 🔄`,
+                content: STRINGS.success.reloaded(newCommand.data.name),
                 flags: MessageFlags.Ephemeral,
             });
         } catch (error) {
             console.error(error);
             await interaction.reply({
-                content: `Error reloading \`/${commandName}\`\n\`${error.message}\``,
+                content: STRINGS.errors.reloadFailed(commandName, error.message),
                 flags: MessageFlags.Ephemeral,
             });
         }

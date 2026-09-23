@@ -30,7 +30,7 @@ module.exports = {
             try {
                 // Upsert: Try to update today's activity, if row doesn't exist, insert
                 await db.query(
-                    `INSERT INTO user_activity (user_id, last_seen)
+                    `INSERT INTO moderation.activity (user_id, last_seen)
                      VALUES ($1, NOW())
                      ON CONFLICT (user_id) 
                      DO UPDATE SET last_seen = NOW()`,

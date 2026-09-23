@@ -19,16 +19,43 @@ const { resolveEmojisInText } = require('../../utils/emojiResolver');
 const { reconstructText, parseComponents, collectAllMediaItems } = require('../../utils/messageParser');
 const { createForumDraft } = require('../../utils/forumHandler');
 
+const STRINGS = {
+    command: {
+        name: 'Edit Message',
+    },
+    modals: {
+        title: 'Edit Message',
+        textLabel: 'Text',
+        channelLabel: 'Target Channel',
+        channelPlaceholder: 'Select a channel (defaults to current)',
+        mentionsLabel: 'Allow Mentions',
+        mentionsPlaceholder: 'Mention users/roles? (defaults to No)',
+        mentionsOptionNo: 'No (Default)',
+        mentionsOptionYes: 'Yes',
+        filesLabel: 'Upload New Image(s) (Appended to index list)',
+    },
+    errors: {
+        notOwnMessage: 'I can only edit my own messages.',
+        noContent: 'No content was provided.',
+        targetChannelNotFound: 'Target channel not found.',
+        failedToEdit: 'Failed to edit/move message.',
+    },
+    messages: {
+        movedAndEdited: (channelId) => `Message moved and edited in <#${channelId}> successfully.`,
+        editedSuccess: 'Message edited successfully.',
+    },
+};
+
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Edit Message')
+        .setName(STRINGS.command.name)
         .setType(ApplicationCommandType.Message)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
     async execute(interaction) {
         if (interaction.targetMessage.author.id !== interaction.client.user.id) {
             return interaction.reply({
-                content: 'I can only edit my own messages.',
+                content: STRINGS.errors.notOwnMessage,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -63,12 +90,12 @@ module.exports = {
             .setValue(text || ' ');
 
         const textLabel = new LabelBuilder()
-            .setLabel('Text')
+            .setLabel(STRINGS.modals.textLabel)
             .setTextInputComponent(textInput);
 
         const channelSelect = new ChannelSelectMenuBuilder()
             .setCustomId('message_channel')
-            .setPlaceholder('Select a channel (defaults to current)')
+            .setPlaceholder(STRINGS.modals.channelPlaceholder)
             .setRequired(false)
             .addChannelTypes(
                 ChannelType.GuildText,
@@ -83,20 +110,20 @@ module.exports = {
             );
 
         const channelLabel = new LabelBuilder()
-            .setLabel('Target Channel')
+            .setLabel(STRINGS.modals.channelLabel)
             .setChannelSelectMenuComponent(channelSelect);
 
         const mentionsSelect = new StringSelectMenuBuilder()
             .setCustomId('message_mentions')
-            .setPlaceholder('Mention users/roles? (defaults to No)')
+            .setPlaceholder(STRINGS.modals.mentionsPlaceholder)
             .setRequired(false)
             .addOptions(
-                new StringSelectMenuOptionBuilder().setLabel('No (Default)').setValue('false'),
-                new StringSelectMenuOptionBuilder().setLabel('Yes').setValue('true')
+                new StringSelectMenuOptionBuilder().setLabel(STRINGS.modals.mentionsOptionNo).setValue('false'),
+                new StringSelectMenuOptionBuilder().setLabel(STRINGS.modals.mentionsOptionYes).setValue('true')
             );
 
         const mentionsLabel = new LabelBuilder()
-            .setLabel('Allow Mentions')
+            .setLabel(STRINGS.modals.mentionsLabel)
             .setStringSelectMenuComponent(mentionsSelect);
 
         const fileUpload = new FileUploadBuilder()
@@ -106,12 +133,12 @@ module.exports = {
             .setMaxValues(10);
 
         const fileLabel = new LabelBuilder()
-            .setLabel('Upload New Image(s) (Appended to index list)')
+            .setLabel(STRINGS.modals.filesLabel)
             .setFileUploadComponent(fileUpload);
 
         const modal = new ModalBuilder()
             .setCustomId(`edit_message_modal_${interaction.targetId}`)
-            .setTitle('Edit Message')
+            .setTitle(STRINGS.modals.title)
             .addComponents(textLabel, channelLabel, mentionsLabel, fileLabel);
 
         await interaction.showModal(modal);
@@ -175,7 +202,7 @@ module.exports = {
         try {
             const targetChannel = await interaction.client.channels.fetch(targetChannelId);
             if (!targetChannel) {
-                throw new Error('Target channel not found.');
+                throw new Error(STRINGS.errors.targetChannelNotFound);
             }
 
             const rawMessage = await interaction.client.rest.get(
@@ -191,7 +218,7 @@ module.exports = {
 
             if (components.length === 0) {
                 return interaction.editReply({
-                    content: 'No content was provided.'
+                    content: STRINGS.errors.noContent
                 });
             }
             
@@ -248,7 +275,7 @@ module.exports = {
                 }
 
                 await interaction.editReply({
-                    content: `Message moved and edited in <#${targetChannelId}> successfully.`
+                    content: STRINGS.messages.movedAndEdited(targetChannelId)
                 });
             } else {
                 // Edit in-place
@@ -266,13 +293,13 @@ module.exports = {
                 await targetMessage.edit(editOptions);
 
                 await interaction.editReply({
-                    content: 'Message edited successfully.'
+                    content: STRINGS.messages.editedSuccess
                 });
             }
         } catch (error) {
             console.error(error);
             await interaction.editReply({
-                content: 'Failed to edit/move message.'
+                content: STRINGS.errors.failedToEdit
             });
         }
     }

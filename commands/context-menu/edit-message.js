@@ -157,7 +157,7 @@ module.exports = {
             rawText = textfield?.value || '';
         }
 
-        rawText = await resolveEmojisInText(interaction.client, rawText);
+        rawText = await resolveEmojisInText(interaction.client, rawText, true);
 
         let targetChannelId = interaction.channelId;
         const channelField = interaction.fields?.fields?.get('message_channel');

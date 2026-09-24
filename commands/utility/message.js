@@ -127,7 +127,7 @@ module.exports = {
             rawText = textfield?.value || '';
         }
 
-        rawText = await resolveEmojisInText(interaction.client, rawText);
+        rawText = await resolveEmojisInText(interaction.client, rawText, true);
 
         // Extract uploaded files
         let attachments = [];

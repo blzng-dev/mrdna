@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 const db = require("../../db");
+const { getEmojiCollection } = require("../../utils/emojiResolver");
 
 // --- ANTI-SPAM / RAGE QUIT SYSTEM ---
 const playerStats = new Map();
@@ -202,10 +203,9 @@ module.exports = {
 
         activeGames.add(userId);
 
-        await interaction.client.application.emojis
-            .fetch()
-            .catch(console.error);
-        const appEmojis = interaction.client.application.emojis.cache;
+        const appEmojis =
+            (await getEmojiCollection(interaction.client, true)) ||
+            interaction.client.application?.emojis?.cache;
 
         let validWords = new Set();
         let secretData;

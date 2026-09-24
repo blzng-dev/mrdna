@@ -15,7 +15,7 @@ const {
     AttachmentBuilder,
     ChannelType
 } = require('discord.js');
-const { resolveEmojisInText } = require('../../utils/emojiResolver');
+const { resolveEmojisInText, simplifyApplicationEmojis } = require('../../utils/emojiResolver');
 const { reconstructText, parseComponents, collectAllMediaItems } = require('../../utils/messageParser');
 const { createForumDraft } = require('../../utils/forumHandler');
 
@@ -74,9 +74,9 @@ module.exports = {
             text = rawMessage.content;
         }
 
-        // Simplify <a:name:id> and <:name:id> to :name: for clean editing
+        // Simplify application emojis to :name: for clean editing, keeping server emojis in <:emoji:id> format
         if (text) {
-            text = text.replace(/<a?:([a-zA-Z0-9_]+):\d+>/g, ':$1:');
+            text = await simplifyApplicationEmojis(interaction.client, text);
         }
 
         if (text.length > 4000) {

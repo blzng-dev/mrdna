@@ -127,6 +127,23 @@ async function resolveEmojisInText(client, text, forceSync = false) {
     return updatedText;
 }
 
+async function simplifyApplicationEmojis(client, text) {
+    if (!text || typeof text !== 'string' || !text.includes(':')) return text;
+
+    await syncApplicationEmojis(client);
+    const appEmojis = client.application?.emojis?.cache;
+
+    if (!appEmojis || appEmojis.size === 0) return text;
+
+    return text.replace(/<a?:([a-zA-Z0-9_]+):(\d+)>/g, (match, name, id) => {
+        if (appEmojis.has(id)) {
+            const emoji = appEmojis.get(id);
+            return `:${emoji?.name || name}:`;
+        }
+        return match;
+    });
+}
+
 const IGNORED_KEYS = new Set([
     'custom_id',
     'customId',
@@ -292,6 +309,8 @@ module.exports = {
     resolveEmojisInObject: resolveEmojisInPayload,
     formatEmojisInString: resolveEmojisInText,
     formatPayload: resolveEmojisInPayload,
+    simplifyApplicationEmojis,
+    syncApplicationEmojis,
     wrapInteraction,
     attachEmojiResolver,
     findEmojiByNameOrId,

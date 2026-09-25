@@ -6,6 +6,7 @@ const {
     TextInputStyle,
     ActionRowBuilder,
 } = require("discord.js");
+const { syncApplicationEmojis } = require("../../utils/emojiResolver");
 
 const BOOSTER_ROLE_ID = "855954434935619584";
 // const BOOSTER_ROLE_ID = "1427145532874166272"; used for testing
@@ -48,7 +49,7 @@ const STRINGS = {
         invalidPrimaryHex: "The primary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
         invalidSecondaryHex: "The secondary color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
         tierTooLowForIcons: "Your server must be Boost Level 2 to use role icons.",
-        customEmojiNotFound: "Could not find that custom emoji in this server.",
+        customEmojiNotFound: "Could not find that custom emoji in this server or global emojis. Other server emojis are not supported.",
         noEditFieldsProvided: "You must provide a new name, a new color, or a new emoji to edit your role.",
         iconFailed: "\n\n**Warning:** Failed to set role icon. The emoji provided appears to be invalid or unsupported.",
         iconRemoveFailed: "\n\n**Warning:** Failed to remove role icon.",
@@ -241,8 +242,19 @@ async function handleCreate(
         ? null
         : validateColor(rawSecondary);
 
-    let clearEmoji =
-        rawEmoji && ["none", "null", "false"].includes(rawEmoji.toLowerCase());
+    const emojiResolution = await resolveRoleEmoji(
+        replyInteraction.client,
+        guild,
+        rawEmoji,
+    );
+    if (emojiResolution.error) {
+        return replyInteraction.followUp({
+            content: emojiResolution.error,
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
+    const { clearEmoji, roleIconUrl, unicodeEmoji } = emojiResolution;
 
     if (rawPrimary && !clearPrimary && validPrimaryColor === false) {
         return replyInteraction.followUp({
@@ -263,27 +275,6 @@ async function handleCreate(
             content: STRINGS.errors.tierTooLowForIcons,
             flags: MessageFlags.Ephemeral,
         });
-    }
-
-    let roleIconUrl = null;
-    let unicodeEmoji = null;
-
-    if (rawEmoji && !clearEmoji) {
-        const customEmojiMatch = rawEmoji.match(/<a?:.+:(\d+)>/);
-        if (customEmojiMatch) {
-            const emojiId = customEmojiMatch[1];
-            const emoji = guild.emojis.cache.get(emojiId);
-            if (emoji) {
-                roleIconUrl = emoji.imageURL({ extension: 'png' });
-            } else {
-                return replyInteraction.followUp({
-                    content: STRINGS.errors.customEmojiNotFound,
-                    flags: MessageFlags.Ephemeral,
-                });
-            }
-        } else {
-            unicodeEmoji = rawEmoji;
-        }
     }
 
     let newPrimary = validPrimaryColor
@@ -329,7 +320,7 @@ async function handleCreate(
 
     if (roleIconUrl) {
         try {
-            await newRole.setIcon(roleIconUrl);
+            await newRole.edit({ icon: roleIconUrl, unicodeEmoji: null });
             replyMsg += STRINGS.messages.iconCustomSet;
             emojiStringForLog = rawEmoji;
         } catch (error) {
@@ -338,7 +329,7 @@ async function handleCreate(
         }
     } else if (unicodeEmoji) {
         try {
-            await newRole.setUnicodeEmoji(unicodeEmoji);
+            await newRole.edit({ icon: null, unicodeEmoji: unicodeEmoji });
             replyMsg += STRINGS.messages.iconUnicodeSet(unicodeEmoji);
             emojiStringForLog = unicodeEmoji;
         } catch (error) {
@@ -383,8 +374,19 @@ async function handleEdit(
         ? null
         : validateColor(rawSecondary);
 
-    let clearEmoji =
-        rawEmoji && ["none", "null", "false"].includes(rawEmoji.toLowerCase());
+    const emojiResolution = await resolveRoleEmoji(
+        replyInteraction.client,
+        guild,
+        rawEmoji,
+    );
+    if (emojiResolution.error) {
+        return replyInteraction.followUp({
+            content: emojiResolution.error,
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
+    const { clearEmoji, roleIconUrl, unicodeEmoji } = emojiResolution;
 
     if (rawPrimary && !clearPrimary && validPrimaryColor === false) {
         return replyInteraction.followUp({
@@ -405,27 +407,6 @@ async function handleEdit(
             content: STRINGS.errors.tierTooLowForIcons,
             flags: MessageFlags.Ephemeral,
         });
-    }
-
-    let roleIconUrl = null;
-    let unicodeEmoji = null;
-
-    if (rawEmoji && !clearEmoji) {
-        const customEmojiMatch = rawEmoji.match(/<a?:.+:(\d+)>/);
-        if (customEmojiMatch) {
-            const emojiId = customEmojiMatch[1];
-            const emoji = guild.emojis.cache.get(emojiId);
-            if (emoji) {
-                roleIconUrl = emoji.imageURL({ extension: 'png' });
-            } else {
-                return replyInteraction.followUp({
-                    content: STRINGS.errors.customEmojiNotFound,
-                    flags: MessageFlags.Ephemeral,
-                });
-            }
-        } else {
-            unicodeEmoji = rawEmoji;
-        }
     }
 
     if (!roleName && !rawPrimary && !rawSecondary && !rawEmoji) {
@@ -482,8 +463,7 @@ async function handleEdit(
 
     if (clearEmoji) {
         try {
-            await updatedRole.setIcon(null);
-            await updatedRole.setUnicodeEmoji(null);
+            await updatedRole.edit({ icon: null, unicodeEmoji: null });
             replyMsg += STRINGS.messages.iconRemoved;
             emojiStringForLog = "removed";
         } catch (error) {
@@ -492,7 +472,7 @@ async function handleEdit(
         }
     } else if (roleIconUrl) {
         try {
-            await updatedRole.setIcon(roleIconUrl);
+            await updatedRole.edit({ icon: roleIconUrl, unicodeEmoji: null });
             replyMsg += STRINGS.messages.iconCustomUpdated;
             emojiStringForLog = rawEmoji;
         } catch (error) {
@@ -501,7 +481,7 @@ async function handleEdit(
         }
     } else if (unicodeEmoji) {
         try {
-            await updatedRole.setUnicodeEmoji(unicodeEmoji);
+            await updatedRole.edit({ icon: null, unicodeEmoji: unicodeEmoji });
             replyMsg += STRINGS.messages.iconUnicodeUpdated(unicodeEmoji);
             emojiStringForLog = unicodeEmoji;
         } catch (error) {
@@ -528,6 +508,101 @@ async function handleEdit(
         member,
         emojiStringForLog,
     );
+}
+
+async function resolveRoleEmoji(client, guild, rawEmoji) {
+    if (!rawEmoji) {
+        return {
+            clearEmoji: false,
+            roleIconUrl: null,
+            unicodeEmoji: null,
+            error: null,
+        };
+    }
+
+    const clearEmoji = ["none", "null", "false"].includes(
+        rawEmoji.toLowerCase(),
+    );
+    if (clearEmoji) {
+        return {
+            clearEmoji: true,
+            roleIconUrl: null,
+            unicodeEmoji: null,
+            error: null,
+        };
+    }
+
+    // Ensure global application emojis are synced/loaded
+    await syncApplicationEmojis(client);
+
+    // 1. Custom emoji pattern: <:name:id> or <a:name:id>
+    const customEmojiMatch = rawEmoji.match(/<a?:.+:(\d+)>/);
+    if (customEmojiMatch) {
+        const emojiId = customEmojiMatch[1];
+        let emoji =
+            guild.emojis.cache.get(emojiId) ||
+            client.application?.emojis?.cache?.get(emojiId);
+        if (!emoji) {
+            try {
+                emoji = await guild.emojis.fetch(emojiId);
+            } catch (e) {}
+        }
+
+        if (emoji) {
+            return {
+                clearEmoji: false,
+                roleIconUrl: emoji.imageURL({ extension: "png" }),
+                unicodeEmoji: null,
+                error: null,
+            };
+        }
+
+        // Emojis from other servers or non-existent are rejected
+        return {
+            clearEmoji: false,
+            roleIconUrl: null,
+            unicodeEmoji: null,
+            error: STRINGS.errors.customEmojiNotFound,
+        };
+    }
+
+    // 2. Coloned or plain name check for server or global application emoji
+    if (rawEmoji.includes(":")) {
+        const cleanName = rawEmoji.replace(/^:|:$/g, "").trim().toLowerCase();
+        const emoji =
+            guild.emojis.cache.find(
+                (e) => e.name?.toLowerCase() === cleanName,
+            ) ||
+            client.application?.emojis?.cache?.find(
+                (e) => e.name?.toLowerCase() === cleanName,
+            );
+        if (emoji) {
+            return {
+                clearEmoji: false,
+                roleIconUrl: emoji.imageURL({ extension: "png" }),
+                unicodeEmoji: null,
+                error: null,
+            };
+        }
+
+        // If explicitly formatted with colons like :name: but not found, reject
+        if (rawEmoji.startsWith(":") && rawEmoji.endsWith(":")) {
+            return {
+                clearEmoji: false,
+                roleIconUrl: null,
+                unicodeEmoji: null,
+                error: STRINGS.errors.customEmojiNotFound,
+            };
+        }
+    }
+
+    // 3. Fallback to standard Unicode emoji
+    return {
+        clearEmoji: false,
+        roleIconUrl: null,
+        unicodeEmoji: rawEmoji,
+        error: null,
+    };
 }
 
 async function findUserCustomRole(interaction) {

@@ -140,7 +140,7 @@ async function handleGiveawayModal(interaction) {
         const giveawayId = customId.replace("giveaway_edit_modal_", "");
 
         const { rows } = await db.query(
-            "SELECT * FROM giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
+            "SELECT * FROM utility.giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
             [giveawayId, interaction.guildId],
         );
 
@@ -326,7 +326,7 @@ async function handleGiveawayButton(interaction) {
         const giveawayId = interaction.message.id;
 
         const { rows } = await db.query(
-            "SELECT * FROM giveaways WHERE id = $1",
+            "SELECT * FROM utility.giveaways WHERE id = $1",
             [giveawayId],
         );
 
@@ -371,7 +371,7 @@ async function handleGiveawayButton(interaction) {
 
         if (isEntered) {
             await db.query(
-                "UPDATE giveaways SET entries = array_remove(entries, $1) WHERE id = $2",
+                "UPDATE utility.giveaways SET entries = array_remove(entries, $1) WHERE id = $2",
                 [interaction.user.id, giveaway.id],
             );
             return interaction.reply({
@@ -380,7 +380,7 @@ async function handleGiveawayButton(interaction) {
             });
         } else {
             await db.query(
-                "UPDATE giveaways SET entries = array_append(entries, $1) WHERE id = $2 AND NOT ($1 = ANY(entries))",
+                "UPDATE utility.giveaways SET entries = array_append(entries, $1) WHERE id = $2 AND NOT ($1 = ANY(entries))",
                 [interaction.user.id, giveaway.id],
             );
             return interaction.reply({
@@ -430,7 +430,7 @@ async function finalizeCreateGiveaway(interaction, data) {
 
         // Insert into DB using actual Discord message ID
         await db.query(
-            `INSERT INTO giveaways (
+            `INSERT INTO utility.giveaways (
                 id, guild_id, channel_id, host_id, prize, winner_count,
                 ends_at, required_role_ids, role_requirement_mode, status, entries, winners
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', '{}', '{}')`,
@@ -472,7 +472,7 @@ async function finalizeCreateGiveaway(interaction, data) {
 async function finalizeEditGiveaway(interaction, data) {
     try {
         const { rows } = await db.query(
-            `UPDATE giveaways
+            `UPDATE utility.giveaways
              SET prize = $1, ends_at = $2, winner_count = $3, host_id = $4, required_role_ids = $5, role_requirement_mode = $6
              WHERE id = $7 RETURNING *`,
             [

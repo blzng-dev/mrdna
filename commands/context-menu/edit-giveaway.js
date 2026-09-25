@@ -28,7 +28,7 @@ module.exports = {
         const messageId = interaction.targetId;
 
         const { rows } = await db.query(
-            "SELECT * FROM giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
+            "SELECT * FROM utility.giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
             [messageId, interaction.guildId]
         );
 

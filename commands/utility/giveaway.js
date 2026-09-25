@@ -170,11 +170,11 @@ module.exports = {
             let params;
 
             if (subcommand === 'reroll') {
-                query = "SELECT id, prize, ends_at FROM giveaways WHERE guild_id = $1 AND status = 'ended' ORDER BY ends_at DESC LIMIT 25";
+                query = "SELECT id, prize, ends_at FROM utility.giveaways WHERE guild_id = $1 AND status = 'ended' ORDER BY ends_at DESC LIMIT 25";
                 params = [guildId];
             } else {
                 // start / edit / end / cancel
-                query = "SELECT id, prize, ends_at FROM giveaways WHERE guild_id = $1 AND status = 'active' ORDER BY ends_at ASC LIMIT 25";
+                query = "SELECT id, prize, ends_at FROM utility.giveaways WHERE guild_id = $1 AND status = 'active' ORDER BY ends_at ASC LIMIT 25";
                 params = [guildId];
             }
 
@@ -219,7 +219,7 @@ module.exports = {
         if (subcommand === 'edit') {
             const giveawayId = interaction.options.getString(STRINGS.command.subcommands.edit.options.giveaway.name);
             const { rows } = await db.query(
-                "SELECT * FROM giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
+                "SELECT * FROM utility.giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
                 [giveawayId, interaction.guildId]
             );
 
@@ -239,7 +239,7 @@ module.exports = {
             const giveawayId = interaction.options.getString(STRINGS.command.subcommands.end.options.giveaway.name);
 
             const { rows } = await db.query(
-                "SELECT * FROM giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
+                "SELECT * FROM utility.giveaways WHERE id = $1 AND guild_id = $2 AND status = 'active'",
                 [giveawayId, interaction.guildId]
             );
 
@@ -257,7 +257,7 @@ module.exports = {
             const count = interaction.options.getInteger(STRINGS.command.subcommands.reroll.options.winners.name);
 
             const { rows } = await db.query(
-                "SELECT * FROM giveaways WHERE id = $1 AND guild_id = $2 AND status = 'ended'",
+                "SELECT * FROM utility.giveaways WHERE id = $1 AND guild_id = $2 AND status = 'ended'",
                 [giveawayId, interaction.guildId]
             );
 
@@ -278,7 +278,7 @@ module.exports = {
             const giveawayId = interaction.options.getString(STRINGS.command.subcommands.cancel.options.giveaway.name);
 
             const { rows } = await db.query(
-                "UPDATE giveaways SET status = 'cancelled' WHERE id = $1 AND guild_id = $2 AND status = 'active' RETURNING *",
+                "UPDATE utility.giveaways SET status = 'cancelled' WHERE id = $1 AND guild_id = $2 AND status = 'active' RETURNING *",
                 [giveawayId, interaction.guildId]
             );
 

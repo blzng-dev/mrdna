@@ -237,7 +237,7 @@ async function endGiveaway(client, giveaway) {
     try {
         // Atomically transition from 'active' to 'ended' to prevent double drawing
         const updateRes = await db.query(
-            "UPDATE giveaways SET status = 'ended' WHERE id = $1 AND status = 'active' RETURNING *",
+            "UPDATE utility.giveaways SET status = 'ended' WHERE id = $1 AND status = 'active' RETURNING *",
             [giveaway.id],
         );
         if (updateRes.rowCount === 0) return; // Already ended or cancelled
@@ -256,7 +256,7 @@ async function endGiveaway(client, giveaway) {
         }
 
         // Save chosen winners to DB
-        await db.query("UPDATE giveaways SET winners = $1 WHERE id = $2", [
+        await db.query("UPDATE utility.giveaways SET winners = $1 WHERE id = $2", [
             winners,
             current.id,
         ]);
@@ -339,7 +339,7 @@ async function rerollGiveaway(client, giveaway, count = null) {
         winners.push(pool.splice(idx, 1)[0]);
     }
 
-    await db.query("UPDATE giveaways SET winners = $1 WHERE id = $2", [
+    await db.query("UPDATE utility.giveaways SET winners = $1 WHERE id = $2", [
         winners,
         giveaway.id,
     ]);

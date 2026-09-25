@@ -10,7 +10,7 @@ module.exports = (client) => {
 
         try {
             const { rows: expired } = await db.query(
-                "SELECT * FROM giveaways WHERE status = 'active' AND ends_at <= NOW() ORDER BY ends_at ASC"
+                "SELECT * FROM utility.giveaways WHERE status = 'active' AND ends_at <= NOW() ORDER BY ends_at ASC"
             );
 
             for (const giveaway of expired) {

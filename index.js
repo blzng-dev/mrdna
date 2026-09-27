@@ -17,6 +17,7 @@ const {
     GatewayIntentBits,
     ActivityType,
     MessageFlags,
+    Partials,
 } = require("discord.js");
 const { attachEmojiResolver } = require("./utils/emojiResolver");
 
@@ -30,7 +31,9 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildModeration,
         GatewayIntentBits.GuildEmojisAndStickers,
+        GatewayIntentBits.GuildMessageReactions,
     ],
+    partials: [Partials.Message, Partials.Reaction, Partials.User],
 });
 
 attachEmojiResolver(client);

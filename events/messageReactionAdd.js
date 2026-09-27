@@ -4,21 +4,23 @@ const CHANNEL = "1553404734906433536";
 const GUILD = "841699180271239218";
 
 const HIGHLIGHTS_CONFIGS = [
-    { emojis: ["⭐", "🌟", "🔥", "❤️", "😭", "💀"], count: 5 },
+    { emojis: ["⭐", "🌟", "🔥", "❤️"], count: 5 },
     { emojis: ["any"], count: 15 },
 ];
 
 const ALLOW_SELF_REACTIONS = false;
 
-const IGNORED_CATEGORIES = [
-    "842742603857788929", //staff
-    "860078313631383552", //ticket
-    "845885438489395241", //logs
-    "842746471249215508", //admin
-    "842746769703829525", //public
-    "1199360363762814996", //private
-    "1423196305269723176", //roleplay
+const ALLOWED_CATEGORIES = [
+    "1260957720731979857",
+    "842746033213669388",
+    "842746813614129222",
 ];
+const ALLOWED_CHANNELS = [];
+
+/*
+const IGNORED_CATEGORIES = [];
+const IGNORED_CHANNELS = [];
+*/
 
 module.exports = {
     name: Events.MessageReactionAdd,
@@ -57,7 +59,18 @@ module.exports = {
             ? message.channel.parent?.parentId
             : message.channel.parentId;
 
-        if (categoryId && IGNORED_CATEGORIES.includes(categoryId)) {
+        const parentChannelId = message.channel.isThread?.()
+            ? message.channel.parentId
+            : null;
+
+        const isAllowed =
+            (ALLOWED_CATEGORIES.length === 0 &&
+                ALLOWED_CHANNELS.length === 0) ||
+            ALLOWED_CHANNELS.includes(message.channelId) ||
+            (parentChannelId && ALLOWED_CHANNELS.includes(parentChannelId)) ||
+            (categoryId && ALLOWED_CATEGORIES.includes(categoryId));
+
+        if (!isAllowed) {
             return;
         }
 

@@ -4,7 +4,7 @@ const CHANNEL = "1553404734906433536";
 const GUILD = "841699180271239218";
 
 const HIGHLIGHTS_CONFIGS = [
-    { emojis: ["⭐", "🌟", "🔥", "❤️"], count: 5 },
+    { emojis: ["⭐", "🌟", "🔥", "❤️", "💀", "😭"], count: 5 },
     { emojis: ["any"], count: 15 },
 ];
 

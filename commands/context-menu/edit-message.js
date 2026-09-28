@@ -26,13 +26,19 @@ const STRINGS = {
     modals: {
         title: 'Edit Message',
         textLabel: 'Text',
+        textDesc:
+            "'c---[#hex] [spoiler]' '/c---' for container; '[2]---[false]' for separator",
         channelLabel: 'Target Channel',
-        channelPlaceholder: 'Select a channel (defaults to current)',
+        channelDesc: 'Defaults to current channel',
+        channelPlaceholder: 'Select a channel',
         mentionsLabel: 'Allow Mentions',
-        mentionsPlaceholder: 'Mention users/roles? (defaults to No)',
+        mentionsDesc: 'Defaults to No',
+        mentionsPlaceholder: 'Mention users/roles?',
         mentionsOptionNo: 'No (Default)',
         mentionsOptionYes: 'Yes',
         filesLabel: 'Upload New Image(s) (Appended to index list)',
+        filesDesc:
+            "'-media' places gallery (default: bottom); to rearrange items in uploaded order use '-media[1,3,2]'",
     },
     errors: {
         notOwnMessage: 'I can only edit my own messages.',
@@ -91,6 +97,7 @@ module.exports = {
 
         const textLabel = new LabelBuilder()
             .setLabel(STRINGS.modals.textLabel)
+            .setDescription(STRINGS.modals.textDesc)
             .setTextInputComponent(textInput);
 
         const channelSelect = new ChannelSelectMenuBuilder()
@@ -111,6 +118,7 @@ module.exports = {
 
         const channelLabel = new LabelBuilder()
             .setLabel(STRINGS.modals.channelLabel)
+            .setDescription(STRINGS.modals.channelDesc)
             .setChannelSelectMenuComponent(channelSelect);
 
         const mentionsSelect = new StringSelectMenuBuilder()
@@ -124,6 +132,7 @@ module.exports = {
 
         const mentionsLabel = new LabelBuilder()
             .setLabel(STRINGS.modals.mentionsLabel)
+            .setDescription(STRINGS.modals.mentionsDesc)
             .setStringSelectMenuComponent(mentionsSelect);
 
         const fileUpload = new FileUploadBuilder()
@@ -134,6 +143,7 @@ module.exports = {
 
         const fileLabel = new LabelBuilder()
             .setLabel(STRINGS.modals.filesLabel)
+            .setDescription(STRINGS.modals.filesDesc)
             .setFileUploadComponent(fileUpload);
 
         const modal = new ModalBuilder()

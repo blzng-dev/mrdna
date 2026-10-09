@@ -4,7 +4,11 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    ContainerBuilder,
+    FileBuilder,
+    AttachmentBuilder,
     StringSelectMenuBuilder,
+    TextDisplayBuilder,
 } = require("discord.js");
 const menuData = require("../data/menu-data.json");
 const commandData = require("../data/command-data.json");
@@ -16,6 +20,20 @@ const {
 const TRANSCRIPT_LOG_CHANNEL_ID = "915884828153511946";
 
 const ROLE_CATEGORIES = require("../data/role-categories.js");
+const { notifyError } = require("../utils/errorNotifier");
+
+const STRINGS = {
+    errors: {
+        notAuthor: "Only the user who ran this command can use this.",
+        manageRolesRequired: 'You need the "Manage Roles" permission to use this.',
+        unknownCategory: "Unknown category.",
+        noTranscriptFound: "Error: No transcript file found on this message.",
+        logChannelNotFound: "Log channel not found.",
+    },
+    buttons: {
+        sentToLogs: "Sent to Logs",
+    },
+};
 
 // Build REVOKE_CONFIGS the same way role.js does, for button handler use
 const REVOKE_CONFIGS = {};
@@ -24,6 +42,7 @@ ROLE_CATEGORIES.forEach((cat) => {
         minRoleId: cat.minId,
         maxRoleId: cat.maxId,
         requiredRoleIds: cat.requiredRoles,
+        bypassUsers: cat.bypassUsers || [],
         title: cat.label,
         unauthorizedReason: "Revoked unauthorized gradient role",
     };
@@ -47,9 +66,11 @@ function scanCategoryForRevoke(guild, config) {
     const usersToProcess = new Map();
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return;
-        const isAuthorized = config.requiredRoleIds.some((id) =>
-            member.roles.cache.has(id),
-        );
+        const isAuthorized =
+            (config.bypassUsers && config.bypassUsers.includes(member.id)) ||
+            config.requiredRoleIds.some((id) =>
+                member.roles.cache.has(id),
+            );
         if (!isAuthorized) {
             const rolesToRemove = member.roles.cache.filter((r) =>
                 targetRoles.has(r.id),
@@ -88,6 +109,7 @@ module.exports = {
                         );
                     } else {
                         console.error(error);
+                        notifyError(error, `Command Error: /${interaction.commandName}`);
                     }
 
                     try {
@@ -164,6 +186,27 @@ module.exports = {
                     return;
                 }
 
+                // --- Ticket Creation & DM Modals ---
+                if (interaction.customId === "ticket_creation_modal") {
+                    const { handleTicketModalSubmit } = require("../utils/ticketHandler");
+                    return handleTicketModalSubmit(interaction);
+                } else if (interaction.customId.startsWith("ticket_dm_modal_")) {
+                    const { handleTicketDmModalSubmit } = require("../utils/ticketHandler");
+                    return handleTicketDmModalSubmit(interaction);
+                } else if (interaction.customId === "ticket_preview_edit_subject_modal") {
+                    const { handleTicketPreviewEditSubjectSubmit } = require("../utils/ticketHandler");
+                    return handleTicketPreviewEditSubjectSubmit(interaction);
+                } else if (interaction.customId === "ticket_preview_edit_body_modal") {
+                    const { handleTicketPreviewEditBodySubmit } = require("../utils/ticketHandler");
+                    return handleTicketPreviewEditBodySubmit(interaction);
+                } else if (interaction.customId === "ticket_preview_edit_users_modal") {
+                    const { handleTicketPreviewEditUsersSubmit } = require("../utils/ticketHandler");
+                    return handleTicketPreviewEditUsersSubmit(interaction);
+                } else if (interaction.customId === "ticket_preview_add_files_modal") {
+                    const { handleTicketPreviewAddFilesSubmit } = require("../utils/ticketHandler");
+                    return handleTicketPreviewAddFilesSubmit(interaction);
+                }
+
                 let commandName = null;
                 if (
                     interaction.customId === "message_modal" ||
@@ -188,6 +231,22 @@ module.exports = {
                     interaction.customId.startsWith("remove_media_modal_")
                 ) {
                     commandName = "Remove Media";
+                } else if (
+                    interaction.customId.startsWith("btn_add_modal_")
+                ) {
+                    commandName = "Add Button";
+                } else if (
+                    interaction.customId.startsWith("btn_edit_form_")
+                ) {
+                    commandName = "Edit Button";
+                } else if (
+                    interaction.customId.startsWith("btn_remove_modal_")
+                ) {
+                    commandName = "Remove Button";
+                } else if (
+                    interaction.customId.startsWith("report_msg_modal_")
+                ) {
+                    commandName = "Report to Staff";
                 }
 
                 if (commandName) {
@@ -207,6 +266,116 @@ module.exports = {
             // 3. BUTTONS
             if (interaction.isButton()) {
                 const customId = interaction.customId;
+
+                // --- Ticket Open Button ---
+                if (customId === "ticket_open") {
+                    const { buildTicketModal } = require("../utils/ticketModal");
+                    return interaction.showModal(buildTicketModal());
+                }
+
+                // --- Ticket Action Buttons ---
+                if (customId === "ticket_claim") {
+                    const { handleTicketClaim } = require("../utils/ticketHandler");
+                    return handleTicketClaim(interaction);
+                } else if (customId === "ticket_create_channel") {
+                    const { handleTicketCreatePrivateChannel } = require("../utils/ticketHandler");
+                    return handleTicketCreatePrivateChannel(interaction);
+                } else if (customId === "ticket_dm_user") {
+                    const { handleTicketDmUser } = require("../utils/ticketHandler");
+                    return handleTicketDmUser(interaction);
+                } else if (customId.startsWith("ticket_dm_confirm_")) {
+                    const { handleTicketDmConfirm } = require("../utils/ticketHandler");
+                    return handleTicketDmConfirm(interaction);
+                } else if (customId.startsWith("ticket_dm_edit_")) {
+                    const { handleTicketDmEdit } = require("../utils/ticketHandler");
+                    return handleTicketDmEdit(interaction);
+                } else if (customId.startsWith("ticket_mark_resolved")) {
+                    const { promptTicketResolve } = require("../utils/ticketHandler");
+                    const threadId = customId.replace("ticket_mark_resolved_", "");
+                    return promptTicketResolve(interaction, threadId !== "ticket_mark_resolved" ? threadId : null);
+                } else if (customId === "ticket_channel_lock_toggle") {
+                    const { handleChannelLockToggle } = require("../utils/ticketHandler");
+                    return handleChannelLockToggle(interaction);
+                } else if (customId === "ticket_channel_close_toggle") {
+                    const { handleChannelCloseToggle } = require("../utils/ticketHandler");
+                    return handleChannelCloseToggle(interaction);
+                } else if (customId === "ticket_channel_delete") {
+                    const { handleChannelDelete } = require("../utils/ticketHandler");
+                    return handleChannelDelete(interaction);
+                }
+
+                // --- Ticket Confirmation Triggers ---
+                if (customId === "ticket_confirm_cancel") {
+                    const { STRINGS } = require("../utils/ticketHandler");
+                    const isComponentsV2 = Boolean(interaction.message?.flags?.has(MessageFlags.IsComponentsV2));
+                    if (isComponentsV2) {
+                        return interaction.update({
+                            components: [new TextDisplayBuilder().setContent(STRINGS.confirmations.cancelled)],
+                            flags: MessageFlags.IsComponentsV2,
+                        });
+                    }
+                    return interaction.update({
+                        content: STRINGS.confirmations.cancelled,
+                        components: [],
+                    });
+                } else if (customId === "ticket_confirm_lock_toggle") {
+                    const { executeChannelLockToggle } = require("../utils/ticketHandler");
+                    return executeChannelLockToggle(interaction);
+                } else if (customId === "ticket_confirm_close_toggle") {
+                    const { executeChannelCloseToggle } = require("../utils/ticketHandler");
+                    return executeChannelCloseToggle(interaction);
+                } else if (customId === "ticket_confirm_channel_delete") {
+                    const { executeChannelDelete } = require("../utils/ticketHandler");
+                    return executeChannelDelete(interaction);
+                } else if (customId.startsWith("ticket_confirm_resolve_")) {
+                    const { handleTicketMarkResolved } = require("../utils/ticketHandler");
+                    const threadId = customId.replace("ticket_confirm_resolve_", "");
+                    return handleTicketMarkResolved(interaction, threadId);
+                } else if (customId.startsWith("ticket_conf_usr_tok_")) {
+                    const { executeChannelUserToggle } = require("../utils/ticketHandler");
+                    const token = customId.replace("ticket_conf_usr_tok_", "");
+                    return executeChannelUserToggle(interaction, token);
+                } else if (customId.startsWith("ticket_conf_usr_a_")) {
+                    const { executeChannelUserToggle } = require("../utils/ticketHandler");
+                    const match = customId.match(/^ticket_conf_usr_a_(.+)_r_(.+)$/);
+                    if (match) {
+                        return executeChannelUserToggle(interaction, match[1], match[2]);
+                    }
+                } else if (customId === "ticket_preview_edit_subject") {
+                    const { handleTicketPreviewEditSubject } = require("../utils/ticketHandler");
+                    return handleTicketPreviewEditSubject(interaction);
+                } else if (customId === "ticket_preview_edit_body") {
+                    const { handleTicketPreviewEditBody } = require("../utils/ticketHandler");
+                    return handleTicketPreviewEditBody(interaction);
+                } else if (customId === "ticket_preview_edit_users") {
+                    const { handleTicketPreviewEditUsers } = require("../utils/ticketHandler");
+                    return handleTicketPreviewEditUsers(interaction);
+                } else if (customId === "ticket_preview_add_files") {
+                    const { handleTicketPreviewAddFiles } = require("../utils/ticketHandler");
+                    return handleTicketPreviewAddFiles(interaction);
+                } else if (customId === "ticket_preview_send") {
+                    const { handleTicketPreviewSend } = require("../utils/ticketHandler");
+                    return handleTicketPreviewSend(interaction);
+                } else if (customId === "ticket_preview_cancel") {
+                    const { handleTicketPreviewCancel } = require("../utils/ticketHandler");
+                    return handleTicketPreviewCancel(interaction);
+                }
+
+                // --- Report Action Buttons (Delete Message, Dismiss) ---
+                if (customId.startsWith("report_del_") || customId.startsWith("report_dismiss_")) {
+                    const reportCommand = interaction.client.commands.get("Report to Staff");
+                    if (reportCommand && reportCommand.handleButton) {
+                        return reportCommand.handleButton(interaction);
+                    }
+                }
+
+                // --- Report Slash Command Launch Button ---
+                if (customId.startsWith("report_launch_")) {
+                    const reportSlash = interaction.client.commands.get("report");
+                    if (reportSlash && reportSlash.handleLaunch) {
+                        return reportSlash.handleLaunch(interaction);
+                    }
+                }
 
                 // --- Giveaway Buttons (Entry Toggle & Multi-Role Prompt) ---
                 if (
@@ -241,12 +410,45 @@ module.exports = {
                 }
 
                 // --- A. Transcript Logging ---
+                // --- A. Transcript Logging ---
                 if (customId === "send_to_logs") {
-                    const attachment = interaction.message.attachments.first();
-                    if (!attachment) {
+                    let messageToUse = interaction.message;
+                    let attachments = Array.from(messageToUse.attachments?.values() || []);
+
+                    // Ephemeral messages or Components V2 messages may not expose attachments on interaction.message.
+                    // Extract file components (type 13) from the container if attachments collection is empty.
+                    if (attachments.length === 0) {
+                        const fileComponents = [];
+                        for (const topComp of (messageToUse.components || [])) {
+                            if (topComp.type === 13) {
+                                fileComponents.push(topComp);
+                            } else if (topComp.components) {
+                                for (const sub of topComp.components) {
+                                    if (sub.type === 13) fileComponents.push(sub);
+                                }
+                            }
+                        }
+
+                        for (const fc of fileComponents) {
+                            const fileUrl = fc.file?.url || fc.url;
+                            if (fileUrl) {
+                                const filename = fc.file?.name || fileUrl.split("/").pop().split("?")[0] || "file";
+                                try {
+                                    const res = await fetch(fileUrl);
+                                    if (res.ok) {
+                                        const buf = Buffer.from(await res.arrayBuffer());
+                                        attachments.push(new AttachmentBuilder(buf, { name: filename }));
+                                    }
+                                } catch (err) {
+                                    console.error("[send_to_logs] Failed to fetch file component:", err);
+                                }
+                            }
+                        }
+                    }
+
+                    if (attachments.length === 0) {
                         return interaction.reply({
-                            content:
-                                "Error: No transcript file found on this message.",
+                            content: STRINGS.errors.noTranscriptFound,
                             flags: MessageFlags.Ephemeral,
                         });
                     }
@@ -255,29 +457,82 @@ module.exports = {
 
                     const logChannel = await interaction.guild.channels.fetch(
                         TRANSCRIPT_LOG_CHANNEL_ID,
-                    );
-                    if (logChannel) {
-                        await logChannel.send({
-                            content: interaction.message.content,
-                            files: [attachment],
-                        });
+                    ).catch(() => null);
 
-                        const disabledRow = ActionRowBuilder.from(
-                            interaction.message.components[0],
-                        );
-                        disabledRow.components[0]
-                            .setDisabled(true)
-                            .setLabel("Sent to Logs")
-                            .setStyle(ButtonStyle.Success);
-                        await interaction.editReply({
-                            components: [disabledRow],
-                        });
-                    } else {
-                        await interaction.followUp({
-                            content: "Log channel not found.",
+                    if (!logChannel) {
+                        return interaction.followUp({
+                            content: STRINGS.errors.logChannelNotFound,
                             flags: MessageFlags.Ephemeral,
                         });
                     }
+
+                    // Build container for log channel (strip out ActionRow)
+                    const rawContainer = interaction.message.components.find((c) => c.type === 17) || interaction.message.components[0];
+                    const logContainer = new ContainerBuilder();
+                    for (const inner of (rawContainer?.components || [])) {
+                        if (inner.type === 1) continue; // Skip ActionRow
+                        if (inner.type === 10) {
+                            logContainer.addTextDisplayComponents(new TextDisplayBuilder().setContent(inner.content));
+                        } else if (inner.type === 13) {
+                            const rawUrl = inner.file?.url || inner.url || "";
+                            let filename = "";
+                            if (rawUrl.startsWith("attachment://")) {
+                                filename = rawUrl.replace("attachment://", "");
+                            } else {
+                                filename = inner.file?.name || rawUrl.split("/").pop().split("?")[0] || "file";
+                            }
+                            logContainer.addFileComponents(new FileBuilder().setURL(`attachment://${filename}`));
+                        }
+                    }
+
+                    // 1. Send the exact message to the log channel without the button
+                    const logMsg = await logChannel.send({
+                        components: [logContainer],
+                        files: attachments,
+                        flags: MessageFlags.IsComponentsV2,
+                        allowedMentions: { parse: [] },
+                    }).catch(console.error);
+
+                    // 2. Also send reply with raw .txt file for Discord native unfurl
+                    const txtAttachment = attachments.find((a) => (a.name || "").endsWith(".txt"));
+                    if (logMsg && txtAttachment) {
+                        await logMsg.reply({
+                            files: [txtAttachment],
+                            allowedMentions: { parse: [] },
+                        }).catch(console.error);
+                    }
+
+                    // 3. Update original message to show disabled "Sent to Logs" button outside container
+                    const updatedContainer = new ContainerBuilder();
+                    for (const inner of (rawContainer?.components || [])) {
+                        if (inner.type === 1) continue; // Skip if any row was nested
+                        if (inner.type === 10) {
+                            updatedContainer.addTextDisplayComponents(new TextDisplayBuilder().setContent(inner.content));
+                        } else if (inner.type === 13) {
+                            const rawUrl = inner.file?.url || inner.url || "";
+                            let filename = "";
+                            if (rawUrl.startsWith("attachment://")) {
+                                filename = rawUrl.replace("attachment://", "");
+                            } else {
+                                filename = inner.file?.name || rawUrl.split("/").pop().split("?")[0] || "file";
+                            }
+                            updatedContainer.addFileComponents(new FileBuilder().setURL(`attachment://${filename}`));
+                        }
+                    }
+
+                    const disabledRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId("sent_to_logs")
+                            .setLabel(STRINGS.buttons.sentToLogs)
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(true),
+                    );
+
+                    await interaction.editReply({
+                        components: [updatedContainer, disabledRow],
+                        flags: MessageFlags.IsComponentsV2,
+                        allowedMentions: { parse: [] },
+                    });
                     return;
                 }
 
@@ -350,11 +605,19 @@ module.exports = {
 
                 // --- D. Revoke Execute Button ---
                 if (customId.startsWith("revoke_execute_")) {
+                    const originalAuthorId =
+                        interaction.message?.interactionMetadata?.user?.id;
+                    if (originalAuthorId && interaction.user.id !== originalAuthorId) {
+                        return interaction.reply({
+                            content: STRINGS.errors.notAuthor,
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
                     if (!interaction.member.permissions.has(0x10000000n)) {
                         // ManageRoles
                         return interaction.reply({
-                            content:
-                                'You need the "Manage Roles" permission to use this.',
+                            content: STRINGS.errors.manageRolesRequired,
                             flags: MessageFlags.Ephemeral,
                         });
                     }
@@ -452,6 +715,7 @@ module.exports = {
                             response.length > 2000
                                 ? response.substring(0, 1997) + "..."
                                 : response,
+                        allowedMentions: { parse: [] },
                     });
                 }
 
@@ -502,10 +766,37 @@ module.exports = {
                 }
             }
 
-            // 4. SELECT MENUS
+            // 4. USER SELECT MENUS
+            else if (interaction.isUserSelectMenu()) {
+                if (interaction.customId === "ticket_channel_add_users") {
+                    const { handleChannelAddUsers } = require("../utils/ticketHandler");
+                    return handleChannelAddUsers(interaction);
+                }
+            }
+
+            // 5. STRING SELECT MENUS
             else if (interaction.isStringSelectMenu()) {
                 const customId = interaction.customId;
                 const selectedValue = interaction.values[0];
+
+                if (customId === "ticket_preview_remove_attachment") {
+                    const { handleTicketPreviewRemoveAttachment } = require("../utils/ticketHandler");
+                    return handleTicketPreviewRemoveAttachment(interaction);
+                }
+
+                if (customId.startsWith("edit_btn_select_")) {
+                    const editBtnCommand = interaction.client.commands.get("Edit Button");
+                    if (editBtnCommand && editBtnCommand.handleSelectMenu) {
+                        return editBtnCommand.handleSelectMenu(interaction);
+                    }
+                }
+
+                if (customId.startsWith("report_select_msg_")) {
+                    const reportSlash = interaction.client.commands.get("report");
+                    if (reportSlash && reportSlash.handleSelect) {
+                        return reportSlash.handleSelect(interaction);
+                    }
+                }
 
                 if (customId.startsWith("forum_tag_")) {
                     const messageCommand =
@@ -523,9 +814,18 @@ module.exports = {
                 }
 
                 if (customId === "revoke_select_categories") {
+                    const originalAuthorId =
+                        interaction.message?.interactionMetadata?.user?.id;
+                    if (originalAuthorId && interaction.user.id !== originalAuthorId) {
+                        return interaction.reply({
+                            content: STRINGS.errors.notAuthor,
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
                     if (!interaction.member.permissions.has(0x10000000n)) {
                         return interaction.reply({
-                            content: 'You need the "Manage Roles" permission.',
+                            content: STRINGS.errors.manageRolesRequired,
                             flags: MessageFlags.Ephemeral,
                         });
                     }
@@ -605,6 +905,7 @@ module.exports = {
                             response.length > 2000
                                 ? response.substring(0, 1997) + "..."
                                 : response,
+                        allowedMentions: { parse: [] },
                     });
                 }
 
@@ -640,6 +941,7 @@ module.exports = {
             }
         } catch (error) {
             console.error(`Error in interactionCreate:`, error);
+            notifyError(error, `Interaction Error: ${interaction.customId || interaction.commandName || "Unknown"}`);
         }
     },
 };

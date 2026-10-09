@@ -96,6 +96,7 @@ ROLE_CATEGORIES.forEach((cat) => {
         minRoleId: cat.minId,
         maxRoleId: cat.maxId,
         requiredRoleIds: cat.requiredRoles,
+        bypassUsers: cat.bypassUsers || [],
         title: cat.label,
         checkUnused: cat.checkUnused || false,
         unauthorizedReason: "Revoked unauthorized gradient role",
@@ -309,9 +310,11 @@ function scanCategory(guild, config) {
     guild.members.cache.forEach((member) => {
         if (member.user.bot) return; // skip bots
 
-        const isAuthorized = config.requiredRoleIds.some((roleId) =>
-            member.roles.cache.has(roleId),
-        );
+        const isAuthorized =
+            (config.bypassUsers && config.bypassUsers.includes(member.id)) ||
+            config.requiredRoleIds.some((roleId) =>
+                member.roles.cache.has(roleId),
+            );
 
         member.roles.cache.forEach((role) => {
             if (targetRoles.has(role.id)) rolesWithMembers.add(role.id);
@@ -409,6 +412,7 @@ async function handleRevoke(interaction) {
                             ? response.substring(0, 1997) + "..."
                             : response,
                     components: [],
+                    allowedMentions: { parse: [] },
                 };
 
                 if (anyFound) {
@@ -499,6 +503,7 @@ async function handleRevoke(interaction) {
                         ? response.substring(0, 1997) + "..."
                         : response,
                 components: [],
+                allowedMentions: { parse: [] },
             });
         }
 
@@ -554,6 +559,7 @@ async function handleRevoke(interaction) {
                           ),
                       ]
                     : [],
+                allowedMentions: { parse: [] },
             });
         }
 
@@ -602,6 +608,7 @@ async function handleRevoke(interaction) {
                     ? response.substring(0, 1997) + "..."
                     : response,
             components: [],
+            allowedMentions: { parse: [] },
         });
     } catch (error) {
         console.error("Error in revoke logic:", error);

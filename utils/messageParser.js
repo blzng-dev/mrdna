@@ -18,6 +18,7 @@ function parseTextAndSeparators(rawText, allMediaItems, usedIndices) {
         const trimmed = line.trim();
         const sepMatch = trimmed.match(/^(\d+)?---(true|false)?$/);
         const mediaMatch = trimmed.match(/^-media(?:\[(.*?)\])?$/);
+        const btnMatch = trimmed.match(/^-btn\[([a-zA-Z0-9_-]+)\|([^\]]+)\]$/);
 
         if (sepMatch) {
             flushText();
@@ -30,6 +31,27 @@ function parseTextAndSeparators(rawText, allMediaItems, usedIndices) {
                 divider: divider,
                 spacing: spacing
             });
+        } else if (btnMatch) {
+            flushText();
+            const actionId = btnMatch[1];
+            const label = btnMatch[2].trim();
+            const buttonObj = {
+                type: 2,
+                custom_id: actionId,
+                label: label,
+                style: 1 // Primary
+            };
+
+            // If last component was an action row with < 5 buttons, append to it
+            const lastComp = components[components.length - 1];
+            if (lastComp && lastComp.type === 1 && Array.isArray(lastComp.components) && lastComp.components.length < 5) {
+                lastComp.components.push(buttonObj);
+            } else {
+                components.push({
+                    type: 1,
+                    components: [buttonObj]
+                });
+            }
         } else if (mediaMatch) {
             flushText();
             if (allMediaItems && allMediaItems.length > 0) {
@@ -184,6 +206,12 @@ function reconstructText(components) {
                     }
                 }
                 res += (res.length > 0 && !res.endsWith('\n') ? '\n' : '') + `-media[${indices.join(', ')}]\n`;
+            } else if (comp.type === 1 && comp.components) {
+                for (const sub of comp.components) {
+                    if (sub.type === 2 && sub.custom_id) {
+                        res += (res.length > 0 && !res.endsWith('\n') ? '\n' : '') + `-btn[${sub.custom_id}|${sub.label || ''}]\n`;
+                    }
+                }
             }
         }
         return res;
@@ -210,6 +238,12 @@ function reconstructText(components) {
                 }
             }
             text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + `-media[${indices.join(', ')}]\n`;
+        } else if (comp.type === 1 && comp.components) {
+            for (const sub of comp.components) {
+                if (sub.type === 2 && sub.custom_id) {
+                    text += (text.length > 0 && !text.endsWith('\n') ? '\n' : '') + `-btn[${sub.custom_id}|${sub.label || ''}]\n`;
+                }
+            }
         } else if (comp.type === 17 && comp.components) {
             let header = 'c---';
             if (comp.accent_color !== undefined && comp.accent_color !== null) {

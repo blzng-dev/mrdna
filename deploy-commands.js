@@ -1,4 +1,4 @@
-const { REST, Routes } = require("discord.js");
+const { REST, Routes, InteractionContextType } = require("discord.js");
 require("dotenv").config();
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENTID;
@@ -20,6 +20,9 @@ for (const folder of commandFolders) {
         const filePath = path.join(commandsPath, file);
         const command = require(filePath);
         if ("data" in command && "execute" in command) {
+            if (!command.data.contexts) {
+                command.data.setContexts?.(InteractionContextType.Guild);
+            }
             commands.push(command.data.toJSON());
         } else {
             console.log(

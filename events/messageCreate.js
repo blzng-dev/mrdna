@@ -12,6 +12,12 @@ module.exports = {
         // 1. Ignore bots and DMs
         if (!message.guild || message.author.bot) return;
 
+        // --- Forward Ticket Channel Attachments to Forum Post ---
+        if (message.attachments && message.attachments.size > 0) {
+            const { forwardTicketAttachments } = require("../utils/ticketHandler");
+            forwardTicketAttachments(message).catch(console.error);
+        }
+
         // 2. Role Check
         const hasRole =
             message.member &&

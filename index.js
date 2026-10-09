@@ -78,19 +78,24 @@ for (const file of eventFiles) {
     }
 }
 
+const { startTicketSweeper } = require("./utils/ticketHandler");
+
 client.once(Events.ClientReady, (c) => {
     startKeepAlive();
     postActivity(client);
     startGiveawayWorker(client);
+    startTicketSweeper(client);
 });
 
 // Global Error Handling
+const { notifyError } = require("./utils/errorNotifier");
+
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    notifyError(reason instanceof Error ? reason : new Error(String(reason)), 'Unhandled Rejection');
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    notifyError(error, 'Uncaught Exception');
 });
 
 client.login(token);

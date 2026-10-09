@@ -102,8 +102,7 @@ module.exports = {
 
     async execute(interaction) {
         try {
-            const member = interaction.member;
-            const { existingUserRole, upperPosition } =
+            const { existingUserRole, upperPosition, member } =
                 await findUserCustomRole(interaction);
 
             let isAllowed = member.roles.cache.has(BOOSTER_ROLE_ID);
@@ -606,14 +605,17 @@ async function resolveRoleEmoji(client, guild, rawEmoji) {
 }
 
 async function findUserCustomRole(interaction) {
-    const boundaryOneRole =
-        await interaction.guild.roles.fetch(BOUNDARY_ONE_ID);
-    const boundaryTwoRole =
-        await interaction.guild.roles.fetch(BOUNDARY_TWO_ID);
+    const [boundaryOneRole, boundaryTwoRole] = await Promise.all([
+        interaction.guild.roles.fetch(BOUNDARY_ONE_ID),
+        interaction.guild.roles.fetch(BOUNDARY_TWO_ID),
+        interaction.guild.roles.fetch(),
+    ]);
 
     if (!boundaryOneRole || !boundaryTwoRole) {
         throw new Error("Custom role boundaries are not configured correctly.");
     }
+
+    const member = await interaction.guild.members.fetch(interaction.user.id);
 
     const lowerPosition = Math.min(
         boundaryOneRole.position,
@@ -630,11 +632,11 @@ async function findUserCustomRole(interaction) {
     );
 
     const existingUserRole =
-        interaction.member.roles.cache.find((role) =>
+        member.roles.cache.find((role) =>
             customRolesInCategory.has(role.id),
         ) || null;
 
-    return { existingUserRole, upperPosition };
+    return { existingUserRole, upperPosition, member };
 }
 
 function validateColor(color) {

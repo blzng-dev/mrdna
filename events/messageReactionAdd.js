@@ -74,6 +74,17 @@ module.exports = {
             return;
         }
 
+        if (message.channel.isThread?.() && message.id === message.channel.id) {
+            const parent =
+                message.channel.parent ||
+                (await message.guild.channels
+                    .fetch(message.channel.parentId)
+                    .catch(() => null));
+            if (parent?.isThreadOnly?.()) {
+                return;
+            }
+        }
+
         let config = HIGHLIGHTS_CONFIGS.find((c) =>
             c.emojis.some(
                 (e) =>

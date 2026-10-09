@@ -178,6 +178,16 @@ async function resolveEmojisInPayload(client, obj, key = null, parent = null, fo
     }
 
     if (typeof obj === 'object') {
+        // Automatically resolve component button emojis that specify a name without an ID
+        if (obj.emoji && typeof obj.emoji === 'object' && obj.emoji.name && !obj.emoji.id) {
+            const resolved = await findEmojiByNameOrId(client, obj.emoji.name);
+            if (resolved?.id) {
+                obj.emoji.id = resolved.id;
+                obj.emoji.name = resolved.name;
+                obj.emoji.animated = Boolean(resolved.animated);
+            }
+        }
+
         for (const k of Object.keys(obj)) {
             if (IGNORED_KEYS.has(k)) continue;
             obj[k] = await resolveEmojisInPayload(client, obj[k], k, obj, forceSync);

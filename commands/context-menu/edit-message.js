@@ -224,6 +224,7 @@ module.exports = {
             // All media items = existing items + newly uploaded items
             const allMediaItems = [...existingMediaItems, ...newMediaItems];
 
+            // Parse components from rawText
             const components = parseComponents(rawText, allMediaItems);
 
             if (components.length === 0) {
@@ -232,8 +233,9 @@ module.exports = {
                 });
             }
             
-            // Keep ActionRows (e.g. link buttons)
-            const existingOtherComponents = rawMessage.components ? 
+            // Only keep existing ActionRows if no action rows were parsed from the text itself
+            const hasParsedActionRows = components.some(c => c.type === 1);
+            const existingOtherComponents = (!hasParsedActionRows && rawMessage.components) ? 
                 rawMessage.components.filter(c => c.type === 1) : [];
 
             const allowedMentionsPayload = mentions ? { parse: ['users', 'roles', 'everyone'] } : { parse: [] };

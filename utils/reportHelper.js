@@ -16,9 +16,7 @@ const {
     MessageFlags,
 } = require("discord.js");
 
-const STAFF_CHANNEL_ID = "865507529516908544";
-// const STAFF_CHANNEL_ID = "1207983772398526504";
-// const STAFF_CHANNEL_ID = "842743285163491338"; bot testing
+const STAFF_CHANNEL_ID = "1207983772398526504";
 
 const STRINGS = {
     modal: {
@@ -118,7 +116,8 @@ function buildReportModal(targetMessage, channelName) {
     const username = targetMessage.author?.username || "Unknown";
     const memberNickname =
         targetMessage.member?.nickname ||
-        targetMessage.guild?.members?.cache?.get(targetMessage.author?.id)?.nickname;
+        targetMessage.guild?.members?.cache?.get(targetMessage.author?.id)
+            ?.nickname;
     const displayName =
         memberNickname ||
         targetMessage.author?.displayName ||
@@ -318,7 +317,8 @@ async function handleReportModalSubmit(interaction) {
             // Pick only the primary media representation for the embed
             const embedMediaUrl =
                 embed.image?.url ||
-                (embed.video?.url && /\.(gif|png|jpe?g|webp)$/i.test(embed.video.url)
+                (embed.video?.url &&
+                /\.(gif|png|jpe?g|webp)$/i.test(embed.video.url)
                     ? embed.video.url
                     : embed.thumbnail?.url);
 

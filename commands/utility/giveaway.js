@@ -12,6 +12,7 @@ const {
     endGiveaway,
     rerollGiveaway,
 } = require('../../utils/giveawayHelper');
+const { cancelGiveawayTimer } = require('../../jobs/giveawayWorker');
 
 const STRINGS = {
     command: {
@@ -247,7 +248,8 @@ module.exports = {
                 return interaction.editReply({ content: STRINGS.errors.notActive });
             }
 
-            await endGiveaway(interaction.client, rows[0]);
+            cancelGiveawayTimer(giveawayId);
+            await endGiveaway(interaction.client, rows[0], { force: true });
             return interaction.editReply({ content: STRINGS.messages.endedSuccess(rows[0].prize) });
         }
 
@@ -276,6 +278,7 @@ module.exports = {
         if (subcommand === 'cancel') {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const giveawayId = interaction.options.getString(STRINGS.command.subcommands.cancel.options.giveaway.name);
+            cancelGiveawayTimer(giveawayId);
 
             const { rows } = await db.query(
                 "UPDATE utility.giveaways SET status = 'cancelled' WHERE id = $1 AND guild_id = $2 AND status = 'active' RETURNING *",

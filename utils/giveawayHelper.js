@@ -233,16 +233,36 @@ function buildGiveawayComponents(giveaway, isEnded = false, winners = null) {
 /**
  * Ends a giveaway: draws winners, edits message, sends announcement, and updates DB.
  */
-async function endGiveaway(client, giveaway) {
+async function endGiveaway(client, giveaway, { force = false } = {}) {
     try {
         // Atomically transition from 'active' to 'ended' to prevent double drawing
-        const updateRes = await db.query(
-            "UPDATE utility.giveaways SET status = 'ended' WHERE id = $1 AND status = 'active' RETURNING *",
-            [giveaway.id],
-        );
-        if (updateRes.rowCount === 0) return; // Already ended or cancelled
+        const query = force
+            ? "UPDATE utility.giveaways SET status = 'ended' WHERE id = $1 AND status = 'active' RETURNING *"
+            : "UPDATE utility.giveaways SET status = 'ended' WHERE id = $1 AND status = 'active' AND ends_at <= NOW() + INTERVAL '10 seconds' RETURNING *";
+
+        const updateRes = await db.query(query, [giveaway.id]);
+        if (updateRes.rowCount === 0) {
+            if (!force) {
+                // If it failed because ends_at was extended into the future, reschedule
+                const { rows } = await db.query(
+                    "SELECT * FROM utility.giveaways WHERE id = $1 AND status = 'active'",
+                    [giveaway.id]
+                );
+                if (rows.length > 0) {
+                    const { scheduleGiveaway } = require('../jobs/giveawayWorker');
+                    scheduleGiveaway(rows[0]);
+                }
+            }
+            return;
+        }
 
         const current = updateRes.rows[0];
+
+        // Clean up any remaining in-memory timer
+        try {
+            const { cancelGiveawayTimer } = require('../jobs/giveawayWorker');
+            cancelGiveawayTimer(current.id);
+        } catch (_) {}
         const entries = current.entries || [];
         const winners = [];
 

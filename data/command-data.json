@@ -1,7 +1,7 @@
 {
     "type": "message",
     "id": "command-msg",
-    "content": "# Bot Commands\n__**Dinosaur**__\ntype </dino:930896048149381120> to get a random Dinosaur fact.\n\n__**Ian Malcolm Quotes**__\ntype </ianquote:1362059542338474157> to get a random quote by Ian Malcolm from Jurassic Park\n\n__**Tickets**__\ntype </ticket:967419478176583710>, which will invoke a Modal, where you will type out your issue. Once you submit it, our staff team will contact you as soon as possible.\n\n__**Bump**__\ntype </bump:947088344167366698> to bump our server to the top on Disboard\n\n__**Rank Commands**__\n- type </rank:1342626366457380951> to know your/member's rank in the server\n- type </me:1025501230044286978> to know your stats in the server\n- type </user stats:1025501230044286984> to get another members stats in the server \n- type </top:1025501230044286983> to get a list of top users in the server\n- type </server:1025501230044286980> to get an overall statistics of the server\n",
+    "content": "# Bot Commands\n__**Dinosaur**__\ntype </dino:930896048149381120> to get a random Dinosaur fact.\n\n__**Ian Malcolm Quotes**__\ntype </ianquote:1362059542338474157> to get a random quote by Ian Malcolm from Jurassic Park\n\n__**Tickets**__\ntype </ticket:967419478176583710>, which will invoke a Modal, where you will type out your issue. Once you submit it, our staff team will contact you as soon as possible.\n\n__**Bump**__\ntype </bump:947088344167366698> to bump our server to the top on Disboard\n\n__**Rank Commands**__\n- type </rank:1342626366457380951> to know your/member's rank in the server\n- type </me:1025501230044286978> to know your stats in the server\n- type </user stats:1025501230044286984> to get another members stats in the server \n- type </top:1025501230044286983> to get a list of top users in the server",
     "components": [
         {
             "action-row": 1,
@@ -17,7 +17,7 @@
             "onInteraction": {
                 "type": "message",
                 "id": "music-command-msg",
-                "content": "**__Music Commands__**\n- **Play**\n  - </play:1102875264901451826> to play a track/playlist by providing a link/query\n  - </nowplaying:1102875265048248364> to show the currently playing track\n  - </stop:1102875264901451835> to stop and clear the queue\n  - </restart:1102875265048248366> to restart the currently playing track\n- **Pause/Unpause**\n  - </pause on:1102875264737890353> to pause the currently playing track\n  - </pause off:1102875264737890353> to unpause the paused track\n- **Repeat**\n  - </repeat single:1102875264901451829> to loop the currently playing track\n  - </repeat all:1102875264901451829> to loop the queue\n  - </repeat off:1102875264901451829> to unloop the track/queue\n- **Skip**\n  - </skip first:1102875264901451834> skips the current track\n  - </skip number:1102875264901451834> skip a certain song in the queue corresponding to its position in queue",
+                "content": "see channel description",
                 "components": null,
                 "ephemeral": true
             }

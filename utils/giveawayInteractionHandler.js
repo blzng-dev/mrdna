@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const db = require("../db");
 const { parseDuration } = require("./durationParser");
 const { STRINGS, buildGiveawayComponents } = require("./giveawayHelper");
+const { scheduleGiveaway } = require("../jobs/giveawayWorker");
 
 const pendingDrafts = new Map();
 
@@ -447,6 +448,19 @@ async function finalizeCreateGiveaway(interaction, data) {
             ],
         );
 
+        scheduleGiveaway({
+            id: sentMessage.id,
+            guild_id: data.guildId,
+            channel_id: data.channelId,
+            host_id: data.hostId,
+            prize: data.prize,
+            winner_count: data.winnerCount,
+            ends_at: endsAt,
+            required_role_ids: data.roleIds,
+            role_requirement_mode: data.roleMode,
+            status: "active",
+        });
+
         const replyFn = interaction.deferred
             ? interaction.editReply.bind(interaction)
             : interaction.reply.bind(interaction);
@@ -494,6 +508,8 @@ async function finalizeEditGiveaway(interaction, data) {
         }
 
         const updated = rows[0];
+        scheduleGiveaway(updated);
+
         const channel = await interaction.client.channels
             .fetch(updated.channel_id)
             .catch(() => null);
